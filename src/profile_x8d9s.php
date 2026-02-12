@@ -54,14 +54,14 @@ if (!isset($_SESSION['user_id'])) {
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
-                    <li class="nav-item"><a class="nav-link" href="dashboard.php">Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link" href="dashboard_v2r1q.php">Dashboard</a></li>
                     <li class="nav-item"><a class="nav-link active" href="profile_x8d9s.php">Profile</a></li>
-                    <li class="nav-item"><a class="nav-link" href="settings.php">Settings</a></li>
+                    <li class="nav-item"><a class="nav-link" href="settings_b6n7m.php">Settings</a></li>
                 </ul>
                 <span class="navbar-text text-white me-3">
                     Welcome, <strong><?php echo htmlspecialchars($_SESSION['first_name'] . ' ' . $_SESSION['last_name']); ?></strong>
                 </span>
-                <a href="logout.php" class="btn btn-danger btn-sm">Logout</a>
+                <a href="logout_k9p2w.php" class="btn btn-danger btn-sm">Logout</a>
             </div>
         </div>
     </nav>

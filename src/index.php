@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $_SESSION['email'] = $user['email'];
             $_SESSION['first_name'] = $user['first_name'];
             $_SESSION['last_name'] = $user['last_name'];
-            header("Location: dashboard.php");
+            header("Location: dashboard_v2r1q.php");
             exit();
         } else {
             $error_message = "Invalid username or password.";
@@ -75,8 +75,8 @@ $conn->close();
     <div class="collapse navbar-collapse" id="navbarNav">
       <ul class="navbar-nav ms-auto">
         <li class="nav-item"><a class="nav-link active" href="index.php">Portal Login</a></li>
-        <li class="nav-item"><a class="nav-link" href="about.php">About Us</a></li>
-        <li class="nav-item"><a class="nav-link" href="contact.php">Contact</a></li>
+        <li class="nav-item"><a class="nav-link" href="about_l4m3r.php">About Us</a></li>
+        <li class="nav-item"><a class="nav-link" href="contact_u5e7z.php">Contact</a></li>
       </ul>
     </div>
   </div>
@@ -119,7 +119,7 @@ $conn->close();
                     </form>
                 </div>
                 <div class="card-footer bg-light text-center py-3">
-                    <small class="text-muted">Forgot password? Contact IT Support at <a href="contact.php">Help Desk</a></small>
+                    <small class="text-muted">Forgot password? Contact IT Support at <a href="contact_u5e7z.php">Help Desk</a></small>
                 </div>
             </div>
         </div>

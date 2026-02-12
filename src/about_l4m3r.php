@@ -17,10 +17,10 @@ session_start();
     <div class="collapse navbar-collapse" id="navbarNav">
       <ul class="navbar-nav">
         <li class="nav-item"><a class="nav-link" href="index.php">Home</a></li>
-        <li class="nav-item"><a class="nav-link active" href="about.php">About Us</a></li>
-        <li class="nav-item"><a class="nav-link" href="contact.php">Contact</a></li>
+        <li class="nav-item"><a class="nav-link active" href="about_l4m3r.php">About Us</a></li>
+        <li class="nav-item"><a class="nav-link" href="contact_u5e7z.php">Contact</a></li>
         <?php if(isset($_SESSION['user_id'])): ?>
-            <li class="nav-item"><a class="nav-link" href="dashboard.php">Dashboard</a></li>
+            <li class="nav-item"><a class="nav-link" href="dashboard_v2r1q.php">Dashboard</a></li>
         <?php endif; ?>
       </ul>
     </div>
