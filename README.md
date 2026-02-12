@@ -36,7 +36,6 @@ sudo ./setup.sh
 
 ## Documentation
 - [Student Handout](docs/HANDOUT.md) - Briefing and hints.
-- [Solution Guide](docs/SOLUTION.md) - **SPOILERS** Step-by-step exploit guide.
 
 ## Disclaimer
 This code is intentionally vulnerable. **DO NOT** deploy this on a public-facing server without strictly isolating it. It allows arbitrary code execution by design.
