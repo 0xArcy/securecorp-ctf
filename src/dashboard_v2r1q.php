@@ -18,10 +18,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         $tmp_name = $file['tmp_name'];
         $file_size = $file['size'];
 
-        // VULNERABLE: Zero validation!
-        // No MIME type check, no extension whitelist, no file size check
-        // This allows arbitrary file upload including PHP shell scripts
-
         $upload_dir = '/var/www/html/uploads/';
         $target_file = $upload_dir . basename($filename);
 

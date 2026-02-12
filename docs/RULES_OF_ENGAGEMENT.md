@@ -10,7 +10,11 @@ This document outlines the authorized scope, rules, and boundaries for the penet
 ## 2. In-Scope Assets
 The following assets are explicitly **authorized** for testing:
 *   **Web Application**: The SecureCorp Employee Portal hosted at `http://localhost` (or the deployed IP address).
-*   **Source Code**: The provided PHP files in the `src/` directory.
+*   **Source Code**: The provided PHP files in the `src/` directory, including:
+    *   `src/index.php`
+    *   `src/dashboard_v2r1q.php`
+    *   `src/profile_x8d9s.php` 
+    *   `src/settings_b6n7m.php`
 *   **Database**: The underlying `company_db` MySQL database interacting with the application.
 
 ## 3. Engagement Objectives
