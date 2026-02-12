@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
             $_SESSION['email'] = $user['email'];
             $_SESSION['first_name'] = $user['first_name'];
             $_SESSION['last_name'] = $user['last_name'];
-            header("Location: dashboard_v2r1q.php");
+            header("Location: profile_x8d9s.php");
             exit();
         } else {
             $error_message = "Invalid username or password.";
