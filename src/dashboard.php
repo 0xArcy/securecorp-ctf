@@ -144,7 +144,7 @@ if (is_dir($upload_dir)) {
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav me-auto">
                     <li class="nav-item"><a class="nav-link active" href="dashboard.php">Dashboard</a></li>
-                    <li class="nav-item"><a class="nav-link" href="profile.php">Profile</a></li>
+                    <li class="nav-item"><a class="nav-link" href="profile_x8d9s.php">Profile</a></li>
                     <li class="nav-item"><a class="nav-link" href="settings.php">Settings</a></li>
                 </ul>
                 <span class="navbar-text text-white me-3">
