@@ -10,9 +10,6 @@ Our recon team has identified the following structure for the employee portal. N
 
 **Known Endpoints:**
 *   **Login Portal:** `http://localhost/index.php`
-*   **Secure Dashboard:** `http://localhost/dashboard_v2r1q.php`
-*   **User Profile:** `http://localhost/profile_x8d9s.php`
-*   **Account Settings:** `http://localhost/settings_b6n7m.php`
 
 ## Rules of Engagement
 1. **No Automated Scanners on public infrastructure.** (This is a local lab, so go wild, but learn the manual way first).
