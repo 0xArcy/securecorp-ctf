@@ -46,8 +46,8 @@ mysql -e "USE $DB_NAME; CREATE TABLE IF NOT EXISTS users (
 # Insert Admin User (The target for SQLi)
 # Password is simplistic "admin123" but the goal is SQLi bypass, not cracking.
 mysql -e "USE $DB_NAME; INSERT INTO users (username, password, email, first_name, last_name) VALUES ('admin', 'admin123', 'admin@securecorp.com', 'System', 'Administrator');"
-# Insert a decoy user
-mysql -e "USE $DB_NAME; INSERT INTO users (username, password, email, first_name, last_name) VALUES ('jdoe', 's3cr3t', 'jdoe@securecorp.com', 'John', 'Doe');"
+# Insert a user with weak credentials for brute forcing
+mysql -e "USE $DB_NAME; INSERT INTO users (username, password, email, first_name, last_name) VALUES ('user', '123456', 'user@securecorp.com', 'Standard', 'User');"
 
 echo "[+] Deploying Website Files..."
 # Remove default index.html

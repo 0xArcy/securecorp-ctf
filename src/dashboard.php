@@ -50,12 +50,11 @@ if (is_dir($upload_dir)) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         body {
-            background-color: #f8f9fa;
+            background-color: #f0f2f5;
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         }
         .navbar {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            background-color: #212529 !important; /* bg-dark */
         }
         .navbar-brand {
             font-weight: 700;
@@ -73,7 +72,7 @@ if (is_dir($upload_dir)) {
             margin-bottom: 20px;
         }
         .card-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);
             color: white;
             border-radius: 10px 10px 0 0 !important;
             font-weight: 600;
@@ -91,7 +90,7 @@ if (is_dir($upload_dir)) {
         .profile-avatar {
             width: 80px;
             height: 80px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);
             border-radius: 50%;
             display: flex;
             align-items: center;
@@ -104,11 +103,11 @@ if (is_dir($upload_dir)) {
             margin-bottom: 10px;
         }
         .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background: linear-gradient(135deg, #0d6efd 0%, #0a58ca 100%);
             border: none;
         }
         .btn-primary:hover {
-            background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+            background: linear-gradient(135deg, #0a58ca 0%, #0d6efd 100%);
         }
         .btn-logout {
             background-color: #dc3545;
@@ -136,13 +135,23 @@ if (is_dir($upload_dir)) {
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark">
-        <div class="container-fluid">
-            <span class="navbar-brand">🏢 CORP Portal - Dashboard</span>
-            <div class="navbar-text text-white ms-auto">
-                Welcome, <strong><?php echo htmlspecialchars($_SESSION['first_name'] . ' ' . $_SESSION['last_name']); ?></strong>
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark shadow-sm">
+        <div class="container">
+            <a class="navbar-brand fw-bold" href="index.php">SecureCorp</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item"><a class="nav-link active" href="dashboard.php">Dashboard</a></li>
+                    <li class="nav-item"><a class="nav-link" href="profile.php">Profile</a></li>
+                    <li class="nav-item"><a class="nav-link" href="settings.php">Settings</a></li>
+                </ul>
+                <span class="navbar-text text-white me-3">
+                    Welcome, <strong><?php echo htmlspecialchars($_SESSION['first_name'] . ' ' . $_SESSION['last_name']); ?></strong>
+                </span>
+                <a href="logout.php" class="btn btn-danger btn-sm">Logout</a>
             </div>
-            <a href="logout.php" class="btn btn-logout btn-sm ms-3">Logout</a>
         </div>
     </nav>
 
