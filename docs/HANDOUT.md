@@ -5,6 +5,15 @@ Welcome, Agent.
 SecureCorp claims to have an unbreakable internal portal. We believe they are hiding sensitive data on their server.
 Your mission is to infiltrate their employee dashboard and retrieve the secret flag located on the server's filesystem.
 
+## Target Intelligence
+Our recon team has identified the following structure for the employee portal. Note that the developers have attempted to secure the files by "salting" the filenames (adding random characters), assuming this security through obscurity will protect them.
+
+**Known Endpoints:**
+*   **Login Portal:** `http://localhost/index.php`
+*   **Secure Dashboard:** `http://localhost/dashboard_v2r1q.php`
+*   **User Profile:** `http://localhost/profile_x8d9s.php`
+*   **Account Settings:** `http://localhost/settings_b6n7m.php`
+
 ## Rules of Engagement
 1. **No Automated Scanners on public infrastructure.** (This is a local lab, so go wild, but learn the manual way first).
 2. **AI Assistance:** You are NOT allowed to ask AI agents to "give me the flag" or "solve this for me". You must discover the vulnerability logic yourself. AI can explain concepts (e.g., "how does SQL injection work?"), but not execute the attack for you.
