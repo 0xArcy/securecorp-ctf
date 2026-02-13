@@ -5,11 +5,21 @@ Welcome, Agent.
 SecureCorp claims to have an unbreakable internal portal. We believe they are hiding sensitive data on their server.
 Your mission is to infiltrate their employee dashboard and retrieve the secret flag located on the server's filesystem.
 
+## Target Environment:
+
+* **Victim Server:** Ubuntu Linux
+* **Attacker Station:** Kali Linux
+
 ## Target Intelligence
 Our recon team has identified the following structure for the employee portal. Note that the developers have attempted to secure the files by "salting" the filenames (adding random characters), assuming this security through obscurity will protect them.
 
 **Known Endpoints:**
-*   **Login Portal:** `http://localhost/index.php`
+*   **Login Portal:** `http://192.16x.x.x/`
+
+## Primary Objectives
+1. Bypass Authentication: Access the dashboard without valid credentials.
+2. Achieve Remote Code Execution (RCE): Gain shell access to the underlying server.
+3. Exfiltrate the Flag: Locate and read the flag.txt file.
 
 ## Rules of Engagement
 1. **No Automated Scanners on public infrastructure.** (This is a local lab, so go wild, but learn the manual way first).
