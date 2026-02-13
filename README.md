@@ -86,7 +86,3 @@ sudo ./setup.sh
 ## Disclaimer
 
 This code is intentionally vulnerable. **DO NOT** deploy this on a public-facing server or bridge it to an insecure network. It allows arbitrary code execution by design.
-
----
-
-### Would you like to add a troubleshooting section for common connectivity issues between the VMs?
