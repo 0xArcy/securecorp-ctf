@@ -3,12 +3,14 @@ const session = require('express-session');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
 const fs = require('fs');
+const { execSync } = require('child_process');
 
 const app = express();
 const PORT = 3000;
 
-// Database setup
-const db = new sqlite3.Database(':memory:');
+// Database setup (persistent file so seeded users persist across restarts)
+const DB_FILE = path.join(__dirname, 'data.sqlite');
+const db = new sqlite3.Database(DB_FILE);
 
 // Session config
 app.use(session({
@@ -24,7 +26,7 @@ app.use(express.static('public'));
 
 // Initialize database
 db.serialize(() => {
-  db.run(`CREATE TABLE users (
+  db.run(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
     username TEXT,
     password TEXT,
@@ -34,30 +36,38 @@ db.serialize(() => {
     is_admin INTEGER DEFAULT 0
   )`);
 
-  db.run(`CREATE TABLE products (
+  db.run(`CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY,
     name TEXT,
     price REAL,
     description TEXT
   )`);
 
-  // Insert test data
-  db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('admin', 'admin123', 'admin@shop.com', 'Admin', 'User', 1)");
-  db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('user1', 'pass123', 'user1@shop.com', 'John', 'Doe', 0)");
-  db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('user2', 'pass456', 'user2@shop.com', 'Jane', 'Smith', 0)");
-  db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('user3', 'pass789', 'user3@shop.com', 'Bob', 'Johnson', 0)");
-  
-  // Insert sample products with images
-  db.run("INSERT INTO products (name, price, description) VALUES ('Wireless Headphones', 79.99, 'Premium noise-cancelling headphones')");
-  db.run("INSERT INTO products (name, price, description) VALUES ('USB-C Cable', 12.99, 'Fast charging cable 2m')");
-  db.run("INSERT INTO products (name, price, description) VALUES ('Laptop Stand', 34.99, 'Adjustable aluminum stand')");
-  db.run("INSERT INTO products (name, price, description) VALUES ('Mechanical Keyboard', 89.99, 'RGB backlit gaming keyboard')");
-  db.run("INSERT INTO products (name, price, description) VALUES ('Wireless Mouse', 24.99, 'Precision optical sensor')");
-  db.run("INSERT INTO products (name, price, description) VALUES ('4K Webcam', 59.99, 'Ultra HD video streaming')");
-  db.run("INSERT INTO products (name, price, description) VALUES ('Phone Case', 14.99, 'Durable protective case')");
-  db.run("INSERT INTO products (name, price, description) VALUES ('Screen Protector', 8.99, 'Tempered glass protection')");
-  db.run("INSERT INTO products (name, price, description) VALUES ('Power Bank', 44.99, '20000mAh fast charging')");
-  db.run("INSERT INTO products (name, price, description) VALUES ('USB Hub', 19.99, '7-port USB 3.0 hub')");
+  // Seed data only if users table is empty
+  db.get('SELECT COUNT(*) AS c FROM users', (err, row) => {
+    if (!err && row && row.c === 0) {
+      db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('admin', 'admin123', 'admin@shop.com', 'Admin', 'User', 1)");
+      db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('alice', 'alice123', 'alice@shop.com', 'Alice', 'Cooper', 0)");
+      db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('bob', 'bob123', 'bob@shop.com', 'Bob', 'Builder', 0)");
+      db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('carol', 'carol123', 'carol@shop.com', 'Carol', 'Danvers', 0)");
+    }
+  });
+
+  // Seed products only if products table is empty
+  db.get('SELECT COUNT(*) AS c FROM products', (err, row) => {
+    if (!err && row && row.c === 0) {
+      db.run("INSERT INTO products (name, price, description) VALUES ('Wireless Headphones', 79.99, 'Premium noise-cancelling headphones')");
+      db.run("INSERT INTO products (name, price, description) VALUES ('USB-C Cable', 12.99, 'Fast charging cable 2m')");
+      db.run("INSERT INTO products (name, price, description) VALUES ('Laptop Stand', 34.99, 'Adjustable aluminum stand')");
+      db.run("INSERT INTO products (name, price, description) VALUES ('Mechanical Keyboard', 89.99, 'RGB backlit gaming keyboard')");
+      db.run("INSERT INTO products (name, price, description) VALUES ('Wireless Mouse', 24.99, 'Precision optical sensor')");
+      db.run("INSERT INTO products (name, price, description) VALUES ('4K Webcam', 59.99, 'Ultra HD video streaming')");
+      db.run("INSERT INTO products (name, price, description) VALUES ('Phone Case', 14.99, 'Durable protective case')");
+      db.run("INSERT INTO products (name, price, description) VALUES ('Screen Protector', 8.99, 'Tempered glass protection')");
+      db.run("INSERT INTO products (name, price, description) VALUES ('Power Bank', 44.99, '20000mAh fast charging')");
+      db.run("INSERT INTO products (name, price, description) VALUES ('USB Hub', 19.99, '7-port USB 3.0 hub')");
+    }
+  });
 });
 
 // Routes
@@ -274,6 +284,7 @@ app.get('/dashboard', (req, res) => {
             <a href="/" class="navbar-brand">🛍️ TechShop</a>
             <div>
               <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
+              <a href="/search" class="btn btn-light btn-sm me-2">Search</a>
               <a href="/cart" class="btn btn-light btn-sm me-2">🛒 Cart</a>
               ${req.session.userId ? `<span class="text-white me-3">👤 ${req.session.firstName}</span>` : ''}
               ${req.session.userId ? `<a href="/logout" class="btn btn-danger btn-sm">Logout</a>` : `<a href="/login" class="btn btn-light btn-sm me-2">Login</a>`}
@@ -365,8 +376,9 @@ app.get('/profile', (req, res) => {
         <div class="container-fluid">
           <span class="navbar-brand">🛍️ TechShop</span>
           <div>
-            <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
-            ${adminLink}
+              <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
+              <a href="/search" class="btn btn-light btn-sm me-2">Search</a>
+              ${adminLink}
             <a href="/logout" class="btn btn-danger btn-sm">Logout</a>
           </div>
         </div>
@@ -455,8 +467,9 @@ app.get('/admin', (req, res) => {
           <div class="container-fluid">
             <span class="navbar-brand">🔐 Admin Panel</span>
             <div>
-              <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
-              <a href="/profile" class="btn btn-light btn-sm me-2">Profile</a>
+                <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
+                <a href="/search" class="btn btn-light btn-sm me-2">Search</a>
+                <a href="/profile" class="btn btn-light btn-sm me-2">Profile</a>
               <a href="/logout" class="btn btn-danger btn-sm">Logout</a>
             </div>
           </div>
@@ -524,6 +537,39 @@ app.get('/execute', (req, res) => {
   } catch (error) {
     res.send(`<pre>Error: ${error.message}</pre>`);
   }
+});
+
+// Search endpoint (VULNERABLE TO SQL INJECTION) - intentionally unsafe for lab
+app.get('/search', (req, res) => {
+  const q = req.query.q || '';
+
+  // VULNERABLE: direct concatenation into SQL (teaches SQL injection)
+  const query = `SELECT * FROM products WHERE name LIKE '%${q}%' OR description LIKE '%${q}%'`;
+
+  db.all(query, (err, products) => {
+    if (err) return res.send(`<p>Error running query: ${err.message}</p>`);
+
+    const resultsList = products.map(p => `<li><a href="/product/${p.id}">${p.name} - $${p.price}</a></li>`).join('');
+
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Search Results</title>
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+      </head>
+      <body>
+        <div class="container" style="margin-top:2rem;">
+          <h2>Search results for "${q}"</h2>
+          <ul>
+            ${resultsList}
+          </ul>
+          <a href="/dashboard" class="btn btn-secondary mt-3">Back to Shop</a>
+        </div>
+      </body>
+      </html>
+    `);
+  });
 });
 
 // Product Detail Page
@@ -616,8 +662,9 @@ app.get('/product/:id', (req, res) => {
           <div class="container-fluid">
             <a href="/" class="navbar-brand">🛍️ TechShop</a>
             <div>
-              <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
-              <a href="/cart" class="btn btn-light btn-sm me-2">🛒 Cart</a>
+                <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
+                <a href="/search" class="btn btn-light btn-sm me-2">Search</a>
+                <a href="/cart" class="btn btn-light btn-sm me-2">🛒 Cart</a>
               ${req.session.userId ? `<span class="text-white me-3">👤 ${req.session.firstName}</span>` : ''}
               ${req.session.userId ? `<a href="/logout" class="btn btn-danger btn-sm">Logout</a>` : `<a href="/login" class="btn btn-light btn-sm">Login</a>`}
             </div>
@@ -683,8 +730,9 @@ app.get('/cart', (req, res) => {
           <div class="container-fluid">
             <a href="/" class="navbar-brand">🛍️ TechShop</a>
             <div>
-              <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
-              <span class="text-white me-3">👤 ${req.session.firstName}</span>
+                <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
+                <a href="/search" class="btn btn-light btn-sm me-2">Search</a>
+                <span class="text-white me-3">👤 ${req.session.firstName}</span>
               <a href="/logout" class="btn btn-danger btn-sm">Logout</a>
             </div>
           </div>
@@ -783,8 +831,9 @@ app.get('/cart', (req, res) => {
           <div class="container-fluid">
             <a href="/" class="navbar-brand">🛍️ TechShop</a>
             <div>
-              <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
-              <span class="text-white me-3">👤 ${req.session.firstName}</span>
+                <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
+                <a href="/search" class="btn btn-light btn-sm me-2">Search</a>
+                <span class="text-white me-3">👤 ${req.session.firstName}</span>
               <a href="/logout" class="btn btn-danger btn-sm">Logout</a>
             </div>
           </div>

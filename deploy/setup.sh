@@ -26,6 +26,10 @@ apt-get install -y curl gnupg2
 curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
 apt-get install -y nodejs
 
+# Install build dependencies required by some native Node modules (sqlite3)
+echo "[*] Installing build tools and sqlite dev headers..."
+apt-get install -y build-essential python3 libsqlite3-dev
+
 # Install Apache
 echo "[*] Installing Apache..."
 apt-get install -y apache2
@@ -41,9 +45,18 @@ APP_DIR="/var/www/ecommerce"
 echo "[*] Creating application directory at $APP_DIR..."
 mkdir -p $APP_DIR
 
-# Copy application files from current directory
+# Copy application files from repository root (only necessary files)
 echo "[*] Copying application files..."
-cp -r ../* $APP_DIR/ 2>/dev/null || true
+mkdir -p $APP_DIR
+cp ../package.json $APP_DIR/ 2>/dev/null || true
+cp ../package-lock.json $APP_DIR/ 2>/dev/null || true
+cp ../server.js $APP_DIR/ 2>/dev/null || true
+cp -r ../public $APP_DIR/ 2>/dev/null || true
+cp ../apache-config.conf $APP_DIR/ 2>/dev/null || true
+# If a pre-seeded SQLite DB exists in repo root, copy it so data persists
+if [ -f ../data.sqlite ]; then
+  cp ../data.sqlite $APP_DIR/
+fi
 cd $APP_DIR
 
 # Install Node dependencies
@@ -52,7 +65,7 @@ npm install --production
 
 # Copy Apache configuration
 echo "[*] Configuring Apache virtual host..."
-cp apache-config.conf /etc/apache2/sites-available/ecommerce.conf
+cp $APP_DIR/apache-config.conf /etc/apache2/sites-available/ecommerce.conf
 a2ensite ecommerce.conf
 
 # Disable default site if it exists
@@ -73,10 +86,31 @@ apache2ctl configtest
 echo "[*] Restarting Apache..."
 systemctl restart apache2
 
-# Start the Node.js application (using supervisor for persistence is recommended in production)
-echo "[*] Starting Node.js application..."
-cd $APP_DIR
-nohup npm start > app.log 2>&1 &
+# Create a systemd service to run the Node.js application persistently
+SERVICE_FILE="/etc/systemd/system/ecommerce.service"
+echo "[*] Creating systemd service for Node.js app..."
+cat > $SERVICE_FILE <<EOF
+[Unit]
+Description=E-Commerce CTF Node App
+After=network.target
+
+[Service]
+Type=simple
+User=www-data
+WorkingDirectory=$APP_DIR
+ExecStart=/usr/bin/node $APP_DIR/server.js
+Restart=on-failure
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Ensure permissions and reload systemd
+chown -R www-data:www-data $APP_DIR
+systemctl daemon-reload
+systemctl enable ecommerce.service
+systemctl restart ecommerce.service
 
 echo ""
 echo "=========================================="
