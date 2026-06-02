@@ -1,53 +1,98 @@
 #!/bin/bash
 
-# setup.sh - Setup script for SecureCorp CTF Challenge
-# Run as root on a fresh Ubuntu/Debian system
+# E-Commerce CTF Lab Setup Script
+# This script sets up the vulnerable e-commerce application with Apache and Node.js
 
 set -e
 
+echo "=========================================="
+echo "E-Commerce CTF Lab - Deployment Script"
+echo "=========================================="
+echo ""
+
+# Check if running as root
 if [ "$EUID" -ne 0 ]; then
-  echo "Please run as root"
-  exit
+  echo "Error: This script must be run as root (use sudo)"
+  exit 1
 fi
 
-echo "[+] Updating system..."
-apt-get update
+# Update system packages
+echo "[*] Updating system packages..."
+apt-get update -qq
 
-echo "[+] Installing dependencies..."
-apt-get install -y apache2 php libapache2-mod-php mysql-server php-mysql unzip
+# Install Node.js and npm
+echo "[*] Installing Node.js and npm..."
+apt-get install -y curl gnupg2
+curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+apt-get install -y nodejs
 
-echo "[+] Starting services..."
-systemctl start apache2
-systemctl enable apache2
-systemctl start mysql
-systemctl enable mysql
+# Install Apache
+echo "[*] Installing Apache..."
+apt-get install -y apache2
 
-echo "[+] Configuring Database..."
-DB_NAME="company_db"
-DB_USER="ctf_user"
-DB_PASS="password123"
+# Enable required Apache modules
+echo "[*] Enabling Apache modules..."
+a2enmod proxy
+a2enmod proxy_http
+a2enmod rewrite
 
-# Create Database and User
-mysql -e "CREATE DATABASE IF NOT EXISTS $DB_NAME;"
-mysql -e "CREATE USER IF NOT EXISTS '$DB_USER'@'localhost' IDENTIFIED BY '$DB_PASS';"
-mysql -e "GRANT ALL PRIVILEGES ON $DB_NAME.* TO '$DB_USER'@'localhost';"
-mysql -e "FLUSH PRIVILEGES;"
+# Create app directory
+APP_DIR="/var/www/ecommerce"
+echo "[*] Creating application directory at $APP_DIR..."
+mkdir -p $APP_DIR
 
-# Create Table and seeded data
-mysql -e "USE $DB_NAME; CREATE TABLE IF NOT EXISTS users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(50) NOT NULL,
-    password VARCHAR(255) NOT NULL,
-    email VARCHAR(100),
-    first_name VARCHAR(50),
-    last_name VARCHAR(50)
-);"
+# Copy application files from current directory
+echo "[*] Copying application files..."
+cp -r ../* $APP_DIR/ 2>/dev/null || true
+cd $APP_DIR
 
-# Insert Admin User (The target for SQLi)
-# Password is simplistic "admin123" but the goal is SQLi bypass, not cracking.
-mysql -e "USE $DB_NAME; INSERT INTO users (username, password, email, first_name, last_name) VALUES ('admin', 'admin123', 'admin@securecorp.com', 'System', 'Administrator');"
-# Insert a user with weak credentials for brute forcing
-mysql -e "USE $DB_NAME; INSERT INTO users (username, password, email, first_name, last_name) VALUES ('user', '123456', 'user@securecorp.com', 'Standard', 'User');"
+# Install Node dependencies
+echo "[*] Installing Node.js dependencies..."
+npm install --production
+
+# Copy Apache configuration
+echo "[*] Configuring Apache virtual host..."
+cp apache-config.conf /etc/apache2/sites-available/ecommerce.conf
+a2ensite ecommerce.conf
+
+# Disable default site if it exists
+a2dissite 000-default.conf 2>/dev/null || true
+
+# Create uploads directory with proper permissions
+echo "[*] Setting up uploads directory..."
+mkdir -p $APP_DIR/uploads
+chown -R www-data:www-data $APP_DIR
+chmod -R 755 $APP_DIR
+chmod -R 775 $APP_DIR/uploads
+
+# Test Apache configuration
+echo "[*] Testing Apache configuration..."
+apache2ctl configtest
+
+# Restart Apache
+echo "[*] Restarting Apache..."
+systemctl restart apache2
+
+# Start the Node.js application (using supervisor for persistence is recommended in production)
+echo "[*] Starting Node.js application..."
+cd $APP_DIR
+nohup npm start > app.log 2>&1 &
+
+echo ""
+echo "=========================================="
+echo "Setup Complete!"
+echo "=========================================="
+echo ""
+echo "Application is running at http://localhost"
+echo "Node.js app running on port 3000"
+echo "Apache proxying requests on port 80"
+echo ""
+echo "Demo Credentials:"
+echo "  Username: admin"
+echo "  Password: admin123"
+echo ""
+echo "Check application logs: tail -f $APP_DIR/app.log"
+echo ""
 
 echo "[+] Deploying Website Files..."
 # Remove default index.html

@@ -1,3 +1,4 @@
 .DS_Store
 src/uploads/*
 !src/uploads/.gitkeep
+old/
