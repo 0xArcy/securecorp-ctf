@@ -13,30 +13,79 @@ When applications **concatenate user input directly into SQL queries** without s
 
 ---
 
+## Setup: Get the Lab Running Locally
+
+Before you start, run the application on your machine:
+
+```bash
+# Clone or navigate to the repo
+cd securecorp-ctf
+
+# Install dependencies
+npm install
+
+# Start the app
+npm start
+```
+
+The app will start on `http://localhost:3000`. Open this in your browser.
+
+**Demo Credentials** (already seeded in the database):
+- admin / admin123 (administrator)
+- alice / alice123
+- bob / bob123
+- carol / carol123
+
+---
+
 ## Step 1: Understanding the Vulnerable Code
 
-The vulnerable code in `server.js` (lines 76-83) looks like this:
+The vulnerable code is in `server.js` at the `/login` POST route. Here's what it looks like:
 
 ```javascript
-// VULNERABLE: Direct string concatenation (SQL Injection)
-const query = `SELECT * FROM users WHERE username = '${username}' AND password = '${password}'`;
+// Login POST - VULNERABLE TO SQL INJECTION
+app.post('/login', (req, res) => {
+  const username = req.body.username || '';
+  const password = req.body.password || '';
 
-db.get(query, (err, row) => {
-  // ... handle response
+  // VULNERABLE: Direct string concatenation (SQL Injection)
+  const query = `SELECT * FROM users WHERE username = '${username}' AND password = '${password}'`;
+
+  db.get(query, (err, row) => {
+    if (err) {
+      return res.send('Error');
+    }
+
+    if (row) {
+      // User authenticated - create session
+      req.session.userId = row.id;
+      req.session.username = row.username;
+      req.session.isAdmin = row.is_admin;
+      return res.redirect('/dashboard');
+    }
+
+    res.send('Invalid credentials');
+  });
 });
 ```
 
 ### Why is this vulnerable?
-The code directly inserts `${username}` and `${password}` into the SQL query **without any validation or escaping**. If a user enters special characters or SQL code, it becomes part of the actual query.
 
-### Your Task:
-Run the application locally:
-```bash
-npm install
-npm start
+The code directly inserts the username and password values into the SQL query **without any validation or escaping**:
+
+```javascript
+const query = `SELECT * FROM users WHERE username = '${username}' AND password = '${password}'`;
 ```
 
-Access the login page at `http://localhost:3000/login`
+If a user enters special characters or SQL code in the username/password field, it becomes part of the actual SQL command. The database will execute whatever SQL the attacker crafts.
+
+### Your Task for Step 1:
+
+1. Open `server.js` and find the vulnerable login code above (around line 76-83).
+2. Read through it carefully.
+3. **Open the app at `http://localhost:3000/login`**
+4. Try a normal login first with credentials: `admin` / `admin123` (should work)
+5. Now try an injection payload (we'll show you how in Step 2)
 
 ---
 
@@ -285,54 +334,55 @@ After making these changes:
 
 ## Update: Deployment & Persistence (2026-06-02)
 
-I've updated the repository and deployment script to make the lab more practical for repeated teaching sessions. Key changes you should know about:
+### For Local Testing (Recommended for Students)
 
-- **Persistent SQLite DB**: The app now uses a file-backed SQLite database `data.sqlite` (created in the project root / app directory). This means seeded users and products persist across server restarts.
-- **Seeded users**: On first run the DB is seeded with these accounts:
-  - admin / admin123  (is_admin = 1)
-  - alice / alice123
-  - bob / bob123
-  - carol / carol123
+Just use:
+```bash
+npm install
+npm start
+```
 
-- **Vulnerable Search endpoint**: A new route `GET /search?q=...` performs a vulnerable LIKE query built by concatenating the `q` parameter into SQL. This endpoint is intentionally unsafe for teaching SQL injection payloads.
+Then open `http://localhost:3000`. The app uses a file-backed SQLite database (`data.sqlite`) so all data persists across restarts.
 
-- **Updated `deploy/setup.sh` behavior**:
-  - Installs build tools (`build-essential`, `libsqlite3-dev`, `python3`) so `sqlite3` native modules build correctly on Debian/Ubuntu.
-  - Copies only the necessary application files into `/var/www/ecommerce` (instead of the whole repo).
-  - If a `data.sqlite` file exists in the repo root, the installer will copy it into the app directory so you can provide a pre-seeded DB.
-  - Creates and enables a `systemd` service `ecommerce.service` to run the Node app as `www-data` (replaces previous `nohup npm start`).
+### For Production Deployment (Teachers/Labs on Debian/Ubuntu)
 
-### How this affects the lab exercises
+If you want to deploy this lab to a production Debian/Ubuntu server with Apache as a reverse proxy:
 
-- When you run the setup script, the seeded users above will be present in the app's SQLite DB. Use them in Step 4 / Step 5 exercises.
-- The `/search` endpoint is vulnerable to SQL injection just like the login route; students can craft payloads in the `q` query parameter to manipulate queries and observe result changes.
-
-### Quick test & commands
-
-Run the updated installer (on Debian/Ubuntu, as root):
 ```bash
 sudo bash deploy/setup.sh
 ```
 
-Check service status and logs:
-```bash
-systemctl status ecommerce.service
-journalctl -u ecommerce.service --no-pager -n 200
+This script:
+- Installs Node.js, npm, Apache, and build tools
+- Copies app files to `/var/www/ecommerce`
+- Creates a systemd service `ecommerce.service` to keep the Node app running
+- Configures Apache to proxy port 80 → Node.js port 3000
+- Persists the SQLite database so seeded users and products survive restarts
+
+**Note:** The deploy script is for production server setup only. For classroom/local use, just run `npm start`.
+
+### Database Details
+
+- **Persistent SQLite DB**: File-backed `data.sqlite` created in the app directory. All SQL queries run against this file.
+- **Seeded users** (on first run):
+  - admin / admin123 (is_admin = 1)
+  - alice / alice123
+  - bob / bob123
+  - carol / carol123
+- **30+ seeded products** with categories (Electronics, Cables, Accessories, Gaming, etc.) for richer search and injection exercises.
+
+### Search Endpoint (Also Vulnerable)
+
+A new route `GET /search?q=...` performs a vulnerable LIKE query:
+
+```javascript
+// VULNERABLE: direct concatenation
+const query = `SELECT id, name, price, description, category FROM products WHERE (name LIKE '%${q}%' OR description LIKE '%${q}%')`;
+if (category) query += ` AND category = '${category}'`;
 ```
 
-Open and test:
-```text
-http://localhost:3000        # main site (proxied via Apache)
-http://localhost:3000/search?q=Headphones
-```
-
-If you prefer not to use `systemd` (e.g., inside a container), run the app directly for testing:
-```bash
-cd /var/www/ecommerce
-npm install
-node server.js
-```
+Students can practice SQL injection payloads here too, including UNION-based attacks.
 
 ---
 
-If you'd like, I can add a toggled deployment option (`--vulnerable` / `--fixed`) to `deploy/setup.sh` so students can deploy either the intentionally vulnerable build or a fixed version for remediation exercises. Would you like that? 
+**If you'd like, I can add a `--vulnerable` / `--fixed` toggle to `deploy/setup.sh` so teachers can deploy either the intentionally vulnerable build or a fixed (parameterized queries) version for remediation demonstrations.** 
