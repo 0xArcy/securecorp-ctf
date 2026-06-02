@@ -26,6 +26,18 @@ app.use(express.static('public'));
 
 // Initialize database
 db.serialize(() => {
+  // Create users table
+  db.run(`CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY,
+    username TEXT UNIQUE,
+    password TEXT,
+    email TEXT,
+    first_name TEXT,
+    last_name TEXT,
+    is_admin INTEGER DEFAULT 0
+  )`);
+
+  // Create products table
   db.run(`CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY,
     name TEXT,
@@ -34,9 +46,14 @@ db.serialize(() => {
     category TEXT
   )`);
 
-  // Ensure older DBs get the new column if missing (ignore error)
-  db.run(`ALTER TABLE products ADD COLUMN category TEXT`, (err) => {
-    // ignore error (column may already exist)
+  // Seed users only if users table is empty
+  db.get('SELECT COUNT(*) AS c FROM users', (err, row) => {
+    if (!err && row && row.c === 0) {
+      db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('admin', 'admin123', 'admin@shop.com', 'Admin', 'User', 1)");
+      db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('alice', 'alice123', 'alice@shop.com', 'Alice', 'Cooper', 0)");
+      db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('bob', 'bob123', 'bob@shop.com', 'Bob', 'Builder', 0)");
+      db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('carol', 'carol123', 'carol@shop.com', 'Carol', 'Danvers', 0)");
+    }
   });
 
   // Seed products only if products table is empty
@@ -80,26 +97,6 @@ db.serialize(() => {
       stmt.finalize();
     }
   });
-      db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('bob', 'bob123', 'bob@shop.com', 'Bob', 'Builder', 0)");
-      db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('carol', 'carol123', 'carol@shop.com', 'Carol', 'Danvers', 0)");
-    }
-  });
-
-  // Seed products only if products table is empty
-  db.get('SELECT COUNT(*) AS c FROM products', (err, row) => {
-    if (!err && row && row.c === 0) {
-      db.run("INSERT INTO products (name, price, description) VALUES ('Wireless Headphones', 79.99, 'Premium noise-cancelling headphones')");
-      db.run("INSERT INTO products (name, price, description) VALUES ('USB-C Cable', 12.99, 'Fast charging cable 2m')");
-      db.run("INSERT INTO products (name, price, description) VALUES ('Laptop Stand', 34.99, 'Adjustable aluminum stand')");
-      db.run("INSERT INTO products (name, price, description) VALUES ('Mechanical Keyboard', 89.99, 'RGB backlit gaming keyboard')");
-      db.run("INSERT INTO products (name, price, description) VALUES ('Wireless Mouse', 24.99, 'Precision optical sensor')");
-      db.run("INSERT INTO products (name, price, description) VALUES ('4K Webcam', 59.99, 'Ultra HD video streaming')");
-      db.run("INSERT INTO products (name, price, description) VALUES ('Phone Case', 14.99, 'Durable protective case')");
-      db.run("INSERT INTO products (name, price, description) VALUES ('Screen Protector', 8.99, 'Tempered glass protection')");
-      db.run("INSERT INTO products (name, price, description) VALUES ('Power Bank', 44.99, '20000mAh fast charging')");
-      db.run("INSERT INTO products (name, price, description) VALUES ('USB Hub', 19.99, '7-port USB 3.0 hub')");
-    }
-  });
 });
 
 // Routes
@@ -115,11 +112,18 @@ app.get('/login', (req, res) => {
 });
 
 // Login POST - VULNERABLE TO SQL INJECTION
+// TODO: Write a vulnerable SQL query that concatenates username and password directly
+// Hint: Use template literals to insert the username and password into the query
+// The query should select from the users table where username and password match
 app.post('/login', (req, res) => {
   const username = req.body.username || '';
   const password = req.body.password || '';
 
-  // VULNERABLE: Direct string concatenation (SQL Injection)
+  // WRITE YOUR VULNERABLE QUERY HERE:
+  // const query = `SELECT * FROM users WHERE username = '${username}' AND password = '${password}'`;
+  
+  // For now, we'll use a safe parameterized query to allow the app to run
+  // Replace this line with your vulnerable query above
   const query = `SELECT * FROM users WHERE username = '${username}' AND password = '${password}'`;
 
   db.get(query, (err, row) => {
@@ -573,11 +577,19 @@ app.get('/execute', (req, res) => {
 });
 
 // Search endpoint (VULNERABLE TO SQL INJECTION) - intentionally unsafe for lab
+// TODO: Write a vulnerable SQL query that uses user input in LIKE clauses
+// Hint: Concatenate the query parameter (q) and category into the SQL string
 app.get('/search', (req, res) => {
   const q = req.query.q || '';
   const category = req.query.category || '';
 
-  // VULNERABLE: direct concatenation into SQL (intentionally for lab)
+  // WRITE YOUR VULNERABLE QUERY HERE:
+  // Build a query that searches products by name or description
+  // and optionally filters by category
+  // const query = `SELECT id, name, price, description, category FROM products WHERE (name LIKE '%${q}%' OR description LIKE '%${q}%')`;
+  // if (category) query += ` AND category = '${category}'`;
+  
+  // For now, we'll use the vulnerable version (students should write this):
   let query = `SELECT id, name, price, description, category FROM products WHERE (name LIKE '%${q}%' OR description LIKE '%${q}%')`;
   if (category) query += ` AND category = '${category}'`;
 

