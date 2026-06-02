@@ -26,28 +26,60 @@ app.use(express.static('public'));
 
 // Initialize database
 db.serialize(() => {
-  db.run(`CREATE TABLE IF NOT EXISTS users (
-    id INTEGER PRIMARY KEY,
-    username TEXT,
-    password TEXT,
-    email TEXT,
-    first_name TEXT,
-    last_name TEXT,
-    is_admin INTEGER DEFAULT 0
-  )`);
-
   db.run(`CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY,
     name TEXT,
     price REAL,
-    description TEXT
+    description TEXT,
+    category TEXT
   )`);
 
-  // Seed data only if users table is empty
-  db.get('SELECT COUNT(*) AS c FROM users', (err, row) => {
+  // Ensure older DBs get the new column if missing (ignore error)
+  db.run(`ALTER TABLE products ADD COLUMN category TEXT`, (err) => {
+    // ignore error (column may already exist)
+  });
+
+  // Seed products only if products table is empty
+  db.get('SELECT COUNT(*) AS c FROM products', (err, row) => {
     if (!err && row && row.c === 0) {
-      db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('admin', 'admin123', 'admin@shop.com', 'Admin', 'User', 1)");
-      db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('alice', 'alice123', 'alice@shop.com', 'Alice', 'Cooper', 0)");
+      const products = [
+        ['Wireless Headphones',79.99,'Premium noise-cancelling headphones','Electronics'],
+        ['USB-C Cable',12.99,'Fast charging cable 2m','Cables'],
+        ['Laptop Stand',34.99,'Adjustable aluminum stand','Accessories'],
+        ['Mechanical Keyboard',89.99,'RGB backlit gaming keyboard','Peripherals'],
+        ['Wireless Mouse',24.99,'Precision optical sensor','Peripherals'],
+        ['4K Webcam',59.99,'Ultra HD video streaming','Electronics'],
+        ['Phone Case',14.99,'Durable protective case','Accessories'],
+        ['Screen Protector',8.99,'Tempered glass protection','Accessories'],
+        ['Power Bank',44.99,'20000mAh fast charging','Electronics'],
+        ['USB Hub',19.99,'7-port USB 3.0 hub','Peripherals'],
+        ['Bluetooth Speaker',49.99,'Portable stereo speaker','Electronics'],
+        ['Gaming Headset',69.99,'Surround sound headset','Gaming'],
+        ['HDMI Cable',9.99,'High speed HDMI 2.0 cable','Cables'],
+        ['External SSD 1TB',129.99,'Fast portable storage','Storage'],
+        ['Wireless Charger',29.99,'Fast wireless charging pad','Electronics'],
+        ['Monitor 27"',199.99,'IPS 1440p monitor','Peripherals'],
+        ['Webcam Cover',3.99,'Privacy webcam slider','Accessories'],
+        ['Desk Lamp',22.99,'Adjustable LED desk lamp','Office'],
+        ['Laptop Sleeve',18.99,'Protective laptop sleeve 15 inch','Accessories'],
+        ['Microphone USB',59.99,'Podcasting USB microphone','Peripherals'],
+        ['Graphics Tablet',99.99,'Drawing tablet with stylus','Peripherals'],
+        ['Router AC1200',79.99,'Dual-band wireless router','Networking'],
+        ['SD Card 128GB',24.99,'High speed memory card','Storage'],
+        ['Smartwatch',149.99,'Fitness tracking smartwatch','Wearables'],
+        ['Phone Gimbal',89.99,'3-axis stabilizer for phones','Accessories'],
+        ['Mechanical Keycap Set',39.99,'PBT keycap set','Peripherals'],
+        ['Gaming Mousepad',19.99,'Large cloth mousepad','Gaming'],
+        ['USB-C Dock',129.99,'Multiport docking station','Peripherals'],
+        ['Portable Projector',249.99,'Mini projector 1080p','Electronics'],
+        ['Noise Cancelling Earbuds',99.99,'In-ear ANC earbuds','Electronics']
+      ];
+
+      const stmt = db.prepare('INSERT INTO products (name, price, description, category) VALUES (?, ?, ?, ?)');
+      for (const p of products) stmt.run(p[0], p[1], p[2], p[3]);
+      stmt.finalize();
+    }
+  });
       db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('bob', 'bob123', 'bob@shop.com', 'Bob', 'Builder', 0)");
       db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('carol', 'carol123', 'carol@shop.com', 'Carol', 'Danvers', 0)");
     }
@@ -283,11 +315,12 @@ app.get('/dashboard', (req, res) => {
           <div class="container-fluid">
             <a href="/" class="navbar-brand">🛍️ TechShop</a>
             <div>
-              <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
-              <a href="/search" class="btn btn-light btn-sm me-2">Search</a>
-              <a href="/cart" class="btn btn-light btn-sm me-2">🛒 Cart</a>
-              ${req.session.userId ? `<span class="text-white me-3">👤 ${req.session.firstName}</span>` : ''}
-              ${req.session.userId ? `<a href="/logout" class="btn btn-danger btn-sm">Logout</a>` : `<a href="/login" class="btn btn-light btn-sm me-2">Login</a>`}
+                <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
+                <a href="/search" class="btn btn-light btn-sm me-2">Search</a>
+                <a href="/cart" class="btn btn-light btn-sm me-2">🛒 Cart</a>
+                ${req.session.userId ? `<span class="text-white me-3">👤 ${req.session.firstName}</span>` : ''}
+                ${req.session.isAdmin ? `<a href="/admin" class="btn btn-warning btn-sm me-2">Admin</a>` : ''}
+                ${req.session.userId ? `<a href="/logout" class="btn btn-danger btn-sm">Logout</a>` : `<a href="/login" class="btn btn-light btn-sm me-2">Login</a>`}
             </div>
           </div>
         </nav>
@@ -542,33 +575,66 @@ app.get('/execute', (req, res) => {
 // Search endpoint (VULNERABLE TO SQL INJECTION) - intentionally unsafe for lab
 app.get('/search', (req, res) => {
   const q = req.query.q || '';
+  const category = req.query.category || '';
 
-  // VULNERABLE: direct concatenation into SQL (teaches SQL injection)
-  const query = `SELECT * FROM products WHERE name LIKE '%${q}%' OR description LIKE '%${q}%'`;
+  // VULNERABLE: direct concatenation into SQL (intentionally for lab)
+  let query = `SELECT id, name, price, description, category FROM products WHERE (name LIKE '%${q}%' OR description LIKE '%${q}%')`;
+  if (category) query += ` AND category = '${category}'`;
 
   db.all(query, (err, products) => {
     if (err) return res.send(`<p>Error running query: ${err.message}</p>`);
 
-    const resultsList = products.map(p => `<li><a href="/product/${p.id}">${p.name} - $${p.price}</a></li>`).join('');
+    const rows = products.map(p => `
+      <tr>
+        <td><a href="/product/${p.id}">${p.name}</a></td>
+        <td>${p.category || ''}</td>
+        <td>$${p.price}</td>
+        <td>${p.description}</td>
+      </tr>
+    `).join('');
 
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Search Results</title>
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-      </head>
-      <body>
-        <div class="container" style="margin-top:2rem;">
-          <h2>Search results for "${q}"</h2>
-          <ul>
-            ${resultsList}
-          </ul>
-          <a href="/dashboard" class="btn btn-secondary mt-3">Back to Shop</a>
-        </div>
-      </body>
-      </html>
-    `);
+    // Build category options from DB (simple query)
+    db.all("SELECT DISTINCT category FROM products", (e, cats) => {
+      const options = (cats || []).map(c => `<option value=\"${c.category}\" ${c.category===category? 'selected':''}>${c.category}</option>`).join('');
+
+      res.send(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>Search - TechShop</title>
+          <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+        </head>
+        <body>
+          <div class="container" style="margin-top:2rem;">
+            <h2>Search Products</h2>
+            <form method="GET" action="/search" class="row g-3">
+              <div class="col-auto">
+                <input name="q" value="${q}" class="form-control" placeholder="Search term">
+              </div>
+              <div class="col-auto">
+                <select name="category" class="form-select">
+                  <option value="">All Categories</option>
+                  ${options}
+                </select>
+              </div>
+              <div class="col-auto">
+                <button class="btn btn-primary">Search</button>
+              </div>
+            </form>
+
+            <table class="table table-striped mt-4">
+              <thead><tr><th>Name</th><th>Category</th><th>Price</th><th>Description</th></tr></thead>
+              <tbody>
+                ${rows}
+              </tbody>
+            </table>
+
+            <a href="/dashboard" class="btn btn-secondary mt-3">Back to Shop</a>
+          </div>
+        </body>
+        </html>
+      `);
+    });
   });
 });
 

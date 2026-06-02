@@ -135,16 +135,22 @@ rm -f /var/www/html/index.html
 # Copy PHP files (Assuming script is run from the deploy directory or root)
 # Determine script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
-SRC_DIR="$SCRIPT_DIR/../src"
-
-if [ ! -d "$SRC_DIR" ]; then
-    echo "Error: Source directory not found at $SRC_DIR"
-    echo "Please ensure you run this script from the repo structure."
-    exit 1
+# Support either `src/` or `old/src/` locations so deploy can be run from different repo states
+if [ -d "$SCRIPT_DIR/../src" ]; then
+  SRC_DIR="$SCRIPT_DIR/../src"
+elif [ -d "$SCRIPT_DIR/../old/src" ]; then
+  SRC_DIR="$SCRIPT_DIR/../old/src"
+else
+  echo "Warning: Source directory not found at ../src or ../old/src; skipping PHP deployment step."
+  SRC_DIR=""
 fi
 
-cp "$SRC_DIR/"*.php /var/www/html/
-cp -r "$SRC_DIR/uploads" /var/www/html/
+if [ -n "$SRC_DIR" ]; then
+  cp "$SRC_DIR/"*.php /var/www/html/ 2>/dev/null || true
+  cp -r "$SRC_DIR/uploads" /var/www/html/ 2>/dev/null || true
+else
+  echo "No PHP source found; continuing without copying PHP files."
+fi
 
 echo "[+] Creating Uploads Directory..."
 mkdir -p /var/www/html/uploads

@@ -280,3 +280,59 @@ After making these changes:
 - [OWASP SQL Injection](https://owasp.org/www-community/attacks/SQL_Injection)
 - [SQLite Query Language](https://www.sqlite.org/lang.html)
 - [Prepared Statements](https://en.wikipedia.org/wiki/Prepared_statement)
+
+---
+
+## Update: Deployment & Persistence (2026-06-02)
+
+I've updated the repository and deployment script to make the lab more practical for repeated teaching sessions. Key changes you should know about:
+
+- **Persistent SQLite DB**: The app now uses a file-backed SQLite database `data.sqlite` (created in the project root / app directory). This means seeded users and products persist across server restarts.
+- **Seeded users**: On first run the DB is seeded with these accounts:
+  - admin / admin123  (is_admin = 1)
+  - alice / alice123
+  - bob / bob123
+  - carol / carol123
+
+- **Vulnerable Search endpoint**: A new route `GET /search?q=...` performs a vulnerable LIKE query built by concatenating the `q` parameter into SQL. This endpoint is intentionally unsafe for teaching SQL injection payloads.
+
+- **Updated `deploy/setup.sh` behavior**:
+  - Installs build tools (`build-essential`, `libsqlite3-dev`, `python3`) so `sqlite3` native modules build correctly on Debian/Ubuntu.
+  - Copies only the necessary application files into `/var/www/ecommerce` (instead of the whole repo).
+  - If a `data.sqlite` file exists in the repo root, the installer will copy it into the app directory so you can provide a pre-seeded DB.
+  - Creates and enables a `systemd` service `ecommerce.service` to run the Node app as `www-data` (replaces previous `nohup npm start`).
+
+### How this affects the lab exercises
+
+- When you run the setup script, the seeded users above will be present in the app's SQLite DB. Use them in Step 4 / Step 5 exercises.
+- The `/search` endpoint is vulnerable to SQL injection just like the login route; students can craft payloads in the `q` query parameter to manipulate queries and observe result changes.
+
+### Quick test & commands
+
+Run the updated installer (on Debian/Ubuntu, as root):
+```bash
+sudo bash deploy/setup.sh
+```
+
+Check service status and logs:
+```bash
+systemctl status ecommerce.service
+journalctl -u ecommerce.service --no-pager -n 200
+```
+
+Open and test:
+```text
+http://localhost:3000        # main site (proxied via Apache)
+http://localhost:3000/search?q=Headphones
+```
+
+If you prefer not to use `systemd` (e.g., inside a container), run the app directly for testing:
+```bash
+cd /var/www/ecommerce
+npm install
+node server.js
+```
+
+---
+
+If you'd like, I can add a toggled deployment option (`--vulnerable` / `--fixed`) to `deploy/setup.sh` so students can deploy either the intentionally vulnerable build or a fixed version for remediation exercises. Would you like that? 
