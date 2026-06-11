@@ -1,361 +1,325 @@
-# SQL Injection Vulnerability Lab - Student Guide
-
-## What is SQL Injection?
-
-**SQL Injection** is a security vulnerability where an attacker inserts malicious SQL code into input fields. This malicious code gets executed by the database, allowing attackers to:
-- Bypass authentication (login without valid credentials)
-- Extract unauthorized data
-- Modify or delete data
-- Gain administrative access
-
-### Why does it happen?
-When applications **concatenate user input directly into SQL queries** without proper protection, attackers can inject SQL commands that change the query's logic.
+What is SQL injection?
+In computing, **SQL injection** is a [code injection](https://en.wikipedia.org/wiki/Code_injection "Code injection") technique used to [attack](https://en.wikipedia.org/wiki/Attack_(computing) "Attack (computing)") data-driven applications, in which malicious [SQL](https://en.wikipedia.org/wiki/SQL "SQL") statements are inserted into an entry field for execution (e.g. to dump the [database](https://en.wikipedia.org/wiki/Database "Database") contents to the attacker or login without entering the password).
 
 ---
 
-## Setup: Get the Lab Running Locally
+**PHASE 1: Set Up the Lab & Write the Vulnerable Code**
 
-Before you start, run the application on your machine:
+First off, this lab runs locally on your machine using Node.js. No VM, no Apache, no SSH. Just your terminal and a text editor.
 
-```bash
-# Navigate to the repo
-cd securecorp-ctf
+**Step 1:**
 
-# Install dependencies
-npm install
+Open a terminal and navigate to the project folder
 
-# Start the app
-npm start
+```
+cd ~/securecorp-ctf
 ```
 
-The app will start on `http://localhost:3000`. Open this in your browser.
+NOTE: hit tab halfway through a folder name and it autocompletes. use that every single time.
 
-**Demo User Credentials** (already seeded):
-- **alice** / **alice123** ← Start here!
-- bob / bob123
-- carol / carol123
-- admin / admin123 (your target)
+**Step 2:**
 
----
+Start the development server
 
-## Step 1: Login as Alice
-
-Start by logging into the application as a normal user to understand the interface.
-
-### Your Task:
-
-1. Open `http://localhost:3000/login`
-2. Enter these credentials:
-   - **Username:** alice
-   - **Password:** alice123
-3. Click "Login"
-4. You should be redirected to the dashboard and see "👤 Alice" in the top right
-
-### What You See:
-- A product shop with 30 different tech items
-- Navigation bar with: **Shop**, **Search**, **Cart**, **Profile**, **Logout**
-- You are **NOT an admin** (no Admin button visible)
-
-### Current State:
-You are a regular user. Your goal is to:
-1. Learn SQL injection via the **Search** feature
-2. Escalate to **admin** privileges
-3. **Delete user bob** from the admin panel
-
----
-
-## Step 2: Discover the Search SQL Injection Vulnerability
-
-The search feature is vulnerable to SQL injection. Let's explore it.
-
-### Your Task:
-
-1. Click on **"Search"** in the navbar
-2. You'll see a search box with a text field
-3. Try a normal search first:
-   - Search for: `Headphones`
-   - You should see products matching "Headphones"
-4. Now try these experimental payloads:
-
-| Search Query | Expected Result |
-|--------------|-----------------|
-| `test` | No results (product not found) |
-| `Keyboard` | Shows keyboard products |
-| `' OR '1'='1` | **Returns ALL products** ✅ (SQL injection!) |
-| `'; DROP TABLE products; --` | Does nothing (likely filtered) |
-
-### Try It Yourself:
-
-Enter this in the search box:
 ```
-' OR '1'='1
+npm run dev
 ```
 
-**What happens?** All products appear! This is your first SQL injection success.
+This uses something called **nodemon** — it watches your files and automatically restarts the server every time you save. So every change you make takes effect immediately. No manual restarts needed.
 
-### Why Did This Work?
+You should see:
 
-The search endpoint builds a query like this:
-```sql
-SELECT * FROM products WHERE (name LIKE '%INPUT%' OR description LIKE '%INPUT%')
+```
+Server running at http://localhost:3000
 ```
 
-When you enter `' OR '1'='1`, the query becomes:
-```sql
-SELECT * FROM products WHERE (name LIKE '%' OR '1'='1'%' OR description LIKE '%' OR '1'='1'%')
-```
+Open your browser and go to `http://localhost:3000`
 
-The `'1'='1'` part is **always true**, so it returns everything!
+**Step 3:**
 
----
+Now open `server.js` in VSCode (it should already be open in your editor).
 
-## Step 3: Understanding SQL Injection in the Search
+Use `Ctrl + G` (or `Cmd + G` on Mac) to jump to **line 176**.
 
-Now let's understand exactly how your injection works.
-
-### The Vulnerable Code:
-
-Look at `server.js` around line 550+ for the search endpoint:
+You'll see a comment block that looks like this:
 
 ```javascript
-// VULNERABLE:
-let query = `SELECT id, name, price, description, category FROM products WHERE (name LIKE '%${q}%' OR description LIKE '%${q}%')`;
-if (category) query += ` AND category = '${category}'`;
-
-db.all(query, (err, products) => { ... });
+// TODO (PHASE 1 — STUDENT TASK):
+// Replace the safe query below with this vulnerable one:
+//
+//   const query = `SELECT * FROM users WHERE username = '${username}' AND password = '${password}'`;
 ```
 
-The query uses **direct string concatenation** (`${q}`), which allows SQL injection.
+Right now, a few lines below that comment, the login uses a **safe** parameterized query:
 
-### Attack Template:
-
-**Original Query:**
-```sql
-SELECT ... WHERE name LIKE '%INPUT%' OR description LIKE '%INPUT%'
+```javascript
+// SAFE (default) — replace with the vulnerable query above to start the lab
+const query = 'SELECT * FROM users WHERE username = ? AND password = ?';
 ```
 
-**Your Injection:**
-```
-' OR '1'='1
-```
+**Your task:** replace those two lines with the vulnerable query from the comment above.
 
-**Resulting Query:**
-```sql
-SELECT ... WHERE name LIKE '%' OR '1'='1'%' OR description LIKE '%' OR '1'='1'%'
-```
+It should look like this after your change:
 
-### Try More Payloads:
-
-| Payload | Effect | Learning |
-|---------|--------|----------|
-| `' OR '1'='1` | All products shown | Always-true condition |
-| `Headphones' --` | Just Headphones (comment out rest) | SQL comments (`--`) |
-| `Keyboard' OR 'x'='x` | All products | Multiple always-true variations |
-
----
-
-## Step 4: Escalate to Admin Privileges
-
-Now that you understand SQL injection, use it to **become an admin** without knowing the admin password.
-
-### Your Task:
-
-The admin login uses a similar vulnerable query:
 ```javascript
 const query = `SELECT * FROM users WHERE username = '${username}' AND password = '${password}'`;
 ```
 
-1. Click **"Logout"** (top right)
-2. Go to **"Login"** page
-3. Try this injection payload:
-   - **Username:** `admin' --`
-   - **Password:** `anything` (e.g., `x`)
-4. Click "Login"
+Make sure you use backticks `` ` `` not regular quotes `'` for the outer string. That's how JavaScript template literals work — they let you drop variables in with `${}`.
 
-### What Happens:
+Save the file. Nodemon will restart the server automatically.
 
-Your payload transforms the query to:
+---
+
+What you just wrote is vulnerable to SQL injection. Can you think why?
+
+The code takes whatever you type in the username box and pastes it directly into the SQL string.
+
+So if I type `gurmat` in the username box, the query becomes:
+
 ```sql
-SELECT * FROM users WHERE username = 'admin' --' AND password = 'x'
+SELECT * FROM users WHERE username = 'gurmat' AND password = 'hahaha'
 ```
 
-The `--` comments out everything after it, **removing the password check**. You bypass authentication! ✅
+Why is that a problem? think.
 
-### Verify Admin Access:
+what if I put `gurm'at` as my username?
+
+```sql
+SELECT * FROM users WHERE username = 'gurm'at' AND password = '...'
+```
+
+See it? the single quote breaks out of the string early. now whatever comes after it is treated as part of the SQL command itself. not just data anymore.
+
+that's the whole idea.
+
+**Step 4:**
+
+Now do the same for the search endpoint. Jump to **line 438** in `server.js`.
+
+You'll see the same setup — a TODO comment with the vulnerable query, and a safe one below it. Replace the safe search queries with the vulnerable versions from the comment:
+
+```javascript
+let query = `SELECT id, name, price, description, category FROM products WHERE (name LIKE '%${q}%' OR description LIKE '%${q}%')`;
+if (category) query += ` AND category = '${category}'`;
+```
+
+And delete or comment out the `const params = [...]` line and the `if (category)` block below it, since those were only needed for the safe version.
+
+Save the file again.
+
+---
+
+## Phase 2: Exploiting It
+
+### Step 1: Explore the Website
+
+1. Open `http://localhost:3000`
+2. Spend a couple minutes clicking around — browse the shop, check the search page with category filters, click some products.
+3. The navbar has: **Shop**, **🔍 Search**, **🛒 Cart**, and **Login**
+4. Once you've got a feel for the app, head to the **Login** page.
+
+### Step 2: Test with Normal Credentials
+
+Log in with a regular account first so you know what normal looks like:
+
+- **Username:** `bob`
+- **Password:** `bob123`
+
+You'll see "👤 Bob" in the top navbar after login. Notice there's no **Admin** button — bob is just a regular user.
+
+Log out and go back to the login page.
+
+### Step 3: The Logic Test
+
+What happens if you type the following into the **Username** field and use the correct password (`bob123`)?
+
+- **Username:** `bob' AND 1=2--`
+
+Do it and come back.
+
+You get an **"Invalid Credentials"** error. Even though the username and password are technically correct. Why?
+
+#### Behind the Scenes: What the Query Looks Like
+
+By injecting `bob' AND 1=2--`, you forced the database to run this:
+
+```sql
+SELECT * FROM users WHERE username = 'bob' AND 1=2--' AND password = 'bob123'
+```
+
+#### Breaking It Down:
+
+- **`--`** is a SQL comment. Everything after it gets ignored. Password check is gone.
+- What's left: `WHERE username = 'bob' AND 1=2`
+- `username = 'bob'` → **TRUE**
+- `1=2` → **FALSE** (1 will never equal 2)
+- `TRUE AND FALSE` → **FALSE**
+
+Database returns zero rows, login fails. You injected SQL successfully — but your own logic made it fail on purpose.
+
+Now what happens if you do `1=1` instead of `1=2` ?
+
+try it with admin..
+
+hacked..
+
+---
+
+### Step 4: Bypass the Admin Login (Properly)
+
+1. Go to the **Login** page
+2. Enter:
+   - **Username:** `admin' --`
+   - **Password:** `anything`
+3. Click **Sign In**
+
+The query becomes:
+
+```sql
+SELECT * FROM users WHERE username = 'admin' --' AND password = 'anything'
+```
+
+The `--` comments out the password check entirely. The database just finds admin and hands you the session.
 
 After logging in:
-1. Click your profile (top right) → should show "⭐ Administrator"
-2. You should see an **"Admin"** button in the navbar
-3. Click the **"Admin"** button
-
-You now have admin panel access! You can see all users in the system.
-
-### How This Attack Works:
-
-| Component | Effect |
-|-----------|--------|
-| `admin' --` | Closes the string and starts SQL comment |
-| `--` | Comments out the rest of the query (`' AND password = '...'`) |
-| Result | Password check is completely skipped |
+- You'll see **👤 Admin** in the top navbar
+- There's now an **⚙️ Admin** button — that's your privilege escalation
 
 ---
 
-## Step 5: Delete User Bob (Your Goal!)
+### Step 5: Search SQL Injection
 
-Now that you're admin, complete your lab objective: **delete user bob**.
+Head to **🔍 Search** in the navbar and try a normal search first:
 
-### Your Task:
-
-1. Click **"Admin"** in the navbar (now visible to you)
-2. You'll see all users in a table:
-   - admin (ADMIN badge - protected)
-   - alice
-   - bob ← Delete this one!
-   - carol
-3. Find the **"Delete"** button for **bob**
-4. Click it and confirm the deletion
-5. Verify bob no longer appears in the user list
-
-### Congratulations! 🎉
-
-You've successfully:
-1. ✅ Logged in as alice
-2. ✅ Discovered SQL injection in the search feature
-3. ✅ Escalated to admin privileges
-4. ✅ **Deleted user bob**
-
----
-
-## Step 6: BONUS - Understanding UNION-Based Injection
-
-For advanced students, here's a bonus technique: **UNION-based SQL injection**.
-
-### What is UNION?
-
-SQL's `UNION` operator combines results from multiple `SELECT` statements. For example:
-
-```sql
-SELECT id, name FROM products
-UNION
-SELECT id, username FROM users
+```
+Keyboard
 ```
 
-This returns both product names AND usernames in the same result.
+Mechanical Keyboard and Mechanical Keycap Set show up. Normal.
 
-### UNION Injection Attack:
+Now try this in the search box:
 
-Go back to the Search page and try:
+```
+' OR '1'='1
+```
+
+All 30 products show up.
+
+#### Why?
+
+The search builds this query:
+
+```sql
+SELECT ... FROM products WHERE (name LIKE '%INPUT%' OR description LIKE '%INPUT%')
+```
+
+When you inject `' OR '1'='1`, it becomes:
+
+```sql
+SELECT ... WHERE (name LIKE '%' OR '1'='1'%' OR description LIKE '%' OR '1'='1'%')
+```
+
+`'1'='1'` is always true. So the whole WHERE condition is always true. Every row gets returned.
+
+### Step 6: UNION Injection (Bonus)
+
+Go to **🔍 Search** and try this:
 
 ```
 ' UNION SELECT id, username, email, email, 'user' FROM users --
 ```
 
-This injects a `UNION` statement to extract user data from the `users` table!
+This appends a second SELECT onto the products query. User account data — usernames, emails — shows up right there in the product list.
 
-**What it does:**
-1. The original query selects: `id, name, price, description, category FROM products`
-2. You inject: `UNION SELECT id, username, email, email, 'user' FROM users`
-3. Result: Products **and** user account details are shown together
+You need to match the number of columns (5 in this case: `id, name, price, description, category`). That's why there are 5 values in the UNION SELECT.
 
-**Try to extract:**
-- All usernames
-- All emails
-- Can you figure out what data is stored in each column?
-
-### UNION Injection Template:
-
-```
-' UNION SELECT column1, column2, column3, column4, column5 FROM table_name --
-```
-
-You need to:
-1. Match the number of columns (5 in products table)
-2. Guess the table name (try: `users`, `admin`, `accounts`)
-3. Guess column names (try: `username`, `email`, `password`)
+Can you extract passwords too?
 
 ---
 
-## Step 7: Fixing the Vulnerabilities (Remediation)
+### Step 7: Delete User Bob (The Objective)
 
-Now that you've exploited the vulnerabilities, let's learn how to fix them.
+Now that you're logged in as admin:
 
-### The Problem:
+1. Click the **⚙️ Admin** button in the navbar
+2. You'll see a user management table with all accounts
+3. Find **bob** and click the **🗑️ Delete** button
+4. Confirm the deletion
 
-Both vulnerable endpoints use **direct string concatenation**:
+Reload the admin page. Bob is gone.
+
+---
+
+## Phase 3: Fixing the Vulnerabilities
+
+Now that you've exploited both vulnerabilities, let's fix them.
+
+### The Problem
+
+Both endpoints use direct string concatenation — user input goes straight into SQL:
 
 ```javascript
-// ❌ VULNERABLE
+// login — VULNERABLE
 const query = `SELECT * FROM users WHERE username = '${username}' AND password = '${password}'`;
-const query = `SELECT * FROM products WHERE name LIKE '%${q}%' ...`;
+
+// search — VULNERABLE
+let query = `SELECT ... WHERE (name LIKE '%${q}%' OR description LIKE '%${q}%')`;
 ```
 
-### The Solution: Parameterized Queries
+### The Fix: Parameterized Queries
 
-Use **parameterized queries** (prepared statements) where user input is **never** part of the query structure:
+Use **parameterized queries** — the `?` acts as a placeholder. The database receives user input as pure data, never as part of the SQL structure. Injection is impossible.
+
+**Login fix (line ~189):**
 
 ```javascript
-// ✅ SAFE
 const query = 'SELECT * FROM users WHERE username = ? AND password = ?';
 db.get(query, [username, password], (err, row) => { ... });
-
-// ✅ SAFE (search)
-let query = 'SELECT * FROM products WHERE (name LIKE ? OR description LIKE ?)';
-db.all(query, [`%${q}%`, `%${q}%`], (err, products) => { ... });
 ```
 
-### Key Differences:
+**Search fix (line ~451):**
+
+```javascript
+let query = 'SELECT id, name, price, description, category FROM products WHERE (name LIKE ? OR description LIKE ?)';
+const params = [`%${q}%`, `%${q}%`];
+if (category) { query += ' AND category = ?'; params.push(category); }
+db.all(query, params, (err, products) => { ... });
+```
+
+### Key Difference
 
 | Vulnerable | Safe |
-|-----------|------|
-| `'${username}'` | `?` (placeholder) |
-| User input is SQL code | User input is data |
-| `admin' --` breaks the query | `admin' --` is treated as literal string |
-| Can inject SQL | Injection impossible |
+|---|---|
+| `` `...${username}...` `` | `?` placeholder |
+| Input becomes SQL code | Input is treated as data |
+| `admin' --` breaks the query | `admin' --` is stored as a literal string |
+| Attacker controls query logic | Attacker controls nothing |
 
-### Your Challenge:
+### Your Task
 
-Modify `server.js` to fix BOTH vulnerabilities:
-1. Login endpoint (line ~130)
-2. Search endpoint (line ~550)
+Replace the vulnerable queries you wrote in PHASE 1 with the safe parameterized versions above. Save the file — nodemon restarts automatically.
 
-Replace the vulnerable queries with parameterized versions. Test your fixes by trying the injection payloads again—they should fail!
+Try `admin' --` on the login again. It should just say "Invalid Credentials" instead of letting you in.
 
----
-
-## Summary: What You Learned
-
-| Step | Concept | Outcome |
-|------|---------|---------|
-| 1 | Normal login | Understand the app |
-| 2 | Search SQL injection | Discover vulnerability |
-| 3 | Injection mechanics | Understand how `' OR '1'='1` works |
-| 4 | Authentication bypass | Use `admin' --` to bypass login |
-| 5 | Admin actions | Delete user bob ✅ |
-| 6 | UNION injection | Extract data from other tables |
-| 7 | Parameterized queries | Fix vulnerabilities |
-
----
-
-## Key Takeaways
-
-1. **Never concatenate user input into SQL queries** - Use parameterized queries instead
-2. **SQL comments (`--`)** can hide password checks
-3. **OR logic (`'1'='1')** makes conditions always true
-4. **UNION** can extract data from unrelated tables
-5. **Input validation is not enough** - Use prepared statements
+That means you fixed it.
 
 ---
 
 ## Verification Checklist
 
-- [ ] Logged in as alice with correct credentials
-- [ ] Found `' OR '1'='1` returns all products
-- [ ] Used `admin' --` to bypass admin login
-- [ ] Verified admin panel access
-- [ ] Deleted user bob successfully
-- [ ] Tried UNION injection (bonus)
-- [ ] Fixed vulnerabilities using parameterized queries (bonus)
+- [ ] Started the server with `npm run dev`
+- [ ] Wrote the vulnerable login query at line 189
+- [ ] Wrote the vulnerable search query at line 451
+- [ ] Logged in as bob with normal credentials
+- [ ] Used `bob' AND 1=2--` to understand false injection
+- [ ] Used `admin' --` to bypass authentication and get admin access
+- [ ] Found `' OR '1'='1` returns all products on the search page
+- [ ] Deleted user bob from the admin panel
+- [ ] Tried UNION injection on search (bonus)
+- [ ] Fixed both vulnerabilities with parameterized queries
+- [ ] Verified injection payloads no longer work after the fix
 
 ---
 
-**Lab Complete!** 🏆
+**Lab Complete.** 🏆

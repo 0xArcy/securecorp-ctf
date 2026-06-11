@@ -8,11 +8,9 @@ const { execSync } = require('child_process');
 const app = express();
 const PORT = 3000;
 
-// Database setup (persistent file so seeded users persist across restarts)
 const DB_FILE = path.join(__dirname, 'data.sqlite');
 const db = new sqlite3.Database(DB_FILE);
 
-// Session config
 app.use(session({
   secret: 'secret-key',
   resave: false,
@@ -20,13 +18,73 @@ app.use(session({
   cookie: { secure: false }
 }));
 
-// Middleware
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
-// Initialize database
+// ─── Shared UI helpers ────────────────────────────────────────────────────────
+
+const CATEGORY_META = {
+  Electronics: { icon: '⚡', color: '#FF6B6B' },
+  Cables:      { icon: '🔌', color: '#4ECDC4' },
+  Accessories: { icon: '🎒', color: '#45B7D1' },
+  Peripherals: { icon: '⌨️',  color: '#FFA07A' },
+  Gaming:      { icon: '🎮', color: '#a855f7' },
+  Storage:     { icon: '💾', color: '#eab308' },
+  Networking:  { icon: '🌐', color: '#BB8FCE' },
+  Wearables:   { icon: '⌚', color: '#85C1E2' },
+  Office:      { icon: '🖥️',  color: '#6ee7b7' },
+};
+
+function getCategoryMeta(cat) {
+  return CATEGORY_META[cat] || { icon: '📦', color: '#667eea' };
+}
+
+function baseStyles(extra = '') {
+  return `
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+      *, *::before, *::after { box-sizing: border-box; }
+      body { background: #f0f2f5; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; min-height: 100vh; }
+      .card { border: none; border-radius: 16px; box-shadow: 0 2px 14px rgba(0,0,0,0.08); }
+      .btn { font-weight: 500; }
+      .section-title { font-weight: 700; color: #1a1a2e; }
+      .badge-cat { font-size: .72rem; font-weight: 600; padding: 3px 8px; border-radius: 20px; display: inline-block; }
+      ${extra}
+    </style>`;
+}
+
+function navbar(req, { active = '' } = {}) {
+  const cartCount = (req.session.cart || []).reduce((s, i) => s + i.quantity, 0);
+  const cartBadge = cartCount > 0
+    ? `<span class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger" style="font-size:.6rem;min-width:18px;">${cartCount}</span>`
+    : '';
+
+  const navLink = (href, label, key) =>
+    `<a href="${href}" class="nav-link text-white ${active === key ? 'fw-bold' : 'opacity-75'}" style="${active === key ? 'border-bottom:2px solid rgba(255,255,255,.8); padding-bottom:1px;' : ''}">${label}</a>`;
+
+  return `
+    <nav class="navbar navbar-dark py-0" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); box-shadow: 0 2px 24px rgba(102,126,234,.4);">
+      <div class="container-fluid px-4" style="height:58px;">
+        <a href="/" class="navbar-brand fw-bold text-decoration-none" style="font-size:1.4rem; letter-spacing:-.5px;">🛍️ TechShop</a>
+        <div class="d-flex align-items-center gap-3">
+          ${navLink('/dashboard', 'Shop', 'shop')}
+          ${navLink('/search', '🔍 Search', 'search')}
+          <a href="/cart" class="nav-link text-white ${active === 'cart' ? 'fw-bold' : 'opacity-75'} position-relative">
+            🛒 Cart${cartBadge}
+          </a>
+          ${req.session.isAdmin ? `<a href="/admin" class="btn btn-warning btn-sm ms-1 fw-semibold">⚙️ Admin</a>` : ''}
+          ${req.session.userId
+            ? `<a href="/profile" class="nav-link text-white opacity-75">👤 ${req.session.firstName}</a>
+               <a href="/logout" class="btn btn-sm fw-semibold" style="background:rgba(255,255,255,.15); color:white; border:1px solid rgba(255,255,255,.35);">Logout</a>`
+            : `<a href="/login" class="btn btn-light btn-sm fw-semibold ms-1">Login</a>`}
+        </div>
+      </div>
+    </nav>`;
+}
+
+// ─── Database setup ───────────────────────────────────────────────────────────
+
 db.serialize(() => {
-  // Create users table
   db.run(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
     username TEXT UNIQUE,
@@ -37,7 +95,6 @@ db.serialize(() => {
     is_admin INTEGER DEFAULT 0
   )`);
 
-  // Create products table
   db.run(`CREATE TABLE IF NOT EXISTS products (
     id INTEGER PRIMARY KEY,
     name TEXT,
@@ -46,7 +103,14 @@ db.serialize(() => {
     category TEXT
   )`);
 
-  // Seed users only if users table is empty
+  db.all('PRAGMA table_info(products)', (err, columns) => {
+    if (!err && columns && !columns.some(col => col.name === 'category')) {
+      db.run('ALTER TABLE products ADD COLUMN category TEXT', (alterErr) => {
+        if (alterErr) console.error('Failed to add category column:', alterErr.message);
+      });
+    }
+  });
+
   db.get('SELECT COUNT(*) AS c FROM users', (err, row) => {
     if (!err && row && row.c === 0) {
       db.run("INSERT INTO users (username, password, email, first_name, last_name, is_admin) VALUES ('admin', 'admin123', 'admin@shop.com', 'Admin', 'User', 1)");
@@ -56,7 +120,6 @@ db.serialize(() => {
     }
   });
 
-  // Seed products only if products table is empty
   db.get('SELECT COUNT(*) AS c FROM products', (err, row) => {
     if (!err && row && row.c === 0) {
       const products = [
@@ -91,7 +154,6 @@ db.serialize(() => {
         ['Portable Projector',249.99,'Mini projector 1080p','Electronics'],
         ['Noise Cancelling Earbuds',99.99,'In-ear ANC earbuds','Electronics']
       ];
-
       const stmt = db.prepare('INSERT INTO products (name, price, description, category) VALUES (?, ?, ?, ?)');
       for (const p of products) stmt.run(p[0], p[1], p[2], p[3]);
       stmt.finalize();
@@ -99,57 +161,47 @@ db.serialize(() => {
   });
 });
 
-// Routes
+// ─── Routes ───────────────────────────────────────────────────────────────────
 
-// Home page
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Login page
 app.get('/login', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'login.html'));
 });
 
-// Login POST - VULNERABLE TO SQL INJECTION
-// TODO: Write a vulnerable SQL query that concatenates username and password directly
-// Hint: Use template literals to insert the username and password into the query
-// The query should select from the users table where username and password match
+// Login POST
+// ─────────────────────────────────────────────────────────────────────────────
+// TODO (PHASE 1 — STUDENT TASK):
+// Replace the safe query below with this vulnerable one:
+//
+//   const query = `SELECT * FROM users WHERE username = '${username}' AND password = '${password}'`;
+//
+// The safe version uses parameterized queries (? placeholders) so injection
+// is impossible. The vulnerable version pastes user input directly into the
+// SQL string — that's what makes it exploitable.
+// ─────────────────────────────────────────────────────────────────────────────
 app.post('/login', (req, res) => {
   const username = req.body.username || '';
   const password = req.body.password || '';
 
-  // WRITE YOUR VULNERABLE QUERY HERE:
-  // const query = `SELECT * FROM users WHERE username = '${username}' AND password = '${password}'`;
-  
-  // For now, we'll use a safe parameterized query to allow the app to run
-  // Replace this line with your vulnerable query above
-  const query = `SELECT * FROM users WHERE username = '${username}' AND password = '${password}'`;
+  // SAFE (default) — replace with the vulnerable query above to start the lab
+  const query = 'SELECT * FROM users WHERE username = ? AND password = ?';
 
-  db.get(query, (err, row) => {
+  db.get(query, [username, password], (err, row) => {
     if (err) {
-      return res.send(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-          <style>
-            body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-            .card { border: none; border-radius: 12px; max-width: 500px; }
-          </style>
-        </head>
-        <body>
-          <div class="card">
-            <div class="card-body p-5 text-center">
-              <div style="font-size: 3rem; margin-bottom: 1rem;">❌</div>
-              <h4 class="text-danger">Error</h4>
-              <p>Invalid credentials or server error.</p>
-              <a href="/login" class="btn btn-primary mt-3">Back to Login</a>
-            </div>
+      return res.send(`<!DOCTYPE html><html lang="en">
+        <head><meta charset="UTF-8"><title>Error - TechShop</title>${baseStyles()}</head>
+        <body>${navbar(req)}
+        <div class="d-flex align-items-center justify-content-center" style="min-height:80vh;">
+          <div class="card p-5 text-center" style="max-width:440px; width:100%;">
+            <div style="font-size:3rem;">❌</div>
+            <h4 class="text-danger mt-3">SQL Error</h4>
+            <p class="text-muted"><code>${err.message}</code></p>
+            <a href="/login" class="btn btn-primary mt-3" style="border-radius:10px;">Back to Login</a>
           </div>
-        </body>
-        </html>
-      `);
+        </div></body></html>`);
     }
 
     if (row) {
@@ -162,831 +214,541 @@ app.post('/login', (req, res) => {
       return res.redirect('/dashboard');
     }
 
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-        <style>
-          body { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; }
-          .card { border: none; border-radius: 12px; max-width: 500px; }
-        </style>
-      </head>
-      <body>
-        <div class="card">
-          <div class="card-body p-5 text-center">
-            <div style="font-size: 3rem; margin-bottom: 1rem;">❌</div>
-            <h4 class="text-danger">Invalid Credentials</h4>
-            <p>Username or password is incorrect.</p>
-            <a href="/login" class="btn btn-primary mt-3">Back to Login</a>
-          </div>
+    res.send(`<!DOCTYPE html><html lang="en">
+      <head><meta charset="UTF-8"><title>Login Failed - TechShop</title>${baseStyles()}</head>
+      <body>${navbar(req)}
+      <div class="d-flex align-items-center justify-content-center" style="min-height:80vh;">
+        <div class="card p-5 text-center" style="max-width:440px; width:100%;">
+          <div style="font-size:3rem;">🔒</div>
+          <h4 class="fw-bold mt-3" style="color:#1a1a2e;">Invalid Credentials</h4>
+          <p class="text-muted">Username or password is incorrect.</p>
+          <a href="/login" class="btn mt-3 fw-semibold" style="background:linear-gradient(135deg,#667eea,#764ba2); color:white; border:none; border-radius:10px; padding:.6rem 2rem;">Try Again</a>
         </div>
-      </body>
-      </html>
-    `);
+      </div></body></html>`);
   });
 });
 
-// Dashboard (guest access allowed)
+// Dashboard
 app.get('/dashboard', (req, res) => {
-  db.all('SELECT * FROM products', (err, products) => {
-    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2', '#F8B88B', '#ABEBC6'];
-    
-    const productsList = products.map((p, i) => `
-      <div class="col-md-6 col-lg-3 mb-4">
-        <div class="product-card">
-          <div class="product-image" style="background: ${colors[i % colors.length]};">
-            <div class="placeholder-icon">📦</div>
-          </div>
-          <div class="product-info">
-            <h5 class="product-title">${p.name}</h5>
-            <p class="product-desc">${p.description}</p>
-            <div class="product-footer">
-              <span class="price">$${p.price}</span>
-              <a href="/product/${p.id}" class="btn-view">View</a>
-            </div>
-          </div>
-        </div>
-      </div>
-    `).join('');
+  const filterCat = req.query.category || '';
 
-    const userSection = req.session.userId 
-      ? `<span class="text-white me-3">👤 ${req.session.firstName}</span>
-         <a href="/profile" class="btn btn-light btn-sm me-2">Profile</a>
-         <a href="/logout" class="btn btn-danger btn-sm">Logout</a>`
-      : `<a href="/login" class="btn btn-light btn-sm me-2">Login</a>`;
+  db.all('SELECT DISTINCT category FROM products ORDER BY category', (err, cats) => {
+    const categories = (cats || []).map(c => c.category).filter(Boolean);
 
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>TechShop - E-Commerce</title>
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-        <style>
-          * { margin: 0; padding: 0; }
-          body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-          .navbar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1rem 0; }
-          .navbar-brand { font-weight: 700; font-size: 1.5rem; }
-          .container { margin-top: 2rem; margin-bottom: 2rem; }
-          h2 { margin-bottom: 1.5rem; font-weight: 700; color: #333; }
-          
-          .product-card {
-            background: white;
-            border-radius: 12px;
-            overflow: hidden;
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-            transition: transform 0.3s, box-shadow 0.3s;
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-          }
-          
-          .product-card:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 8px 16px rgba(0,0,0,0.15);
-          }
-          
-          .product-image {
-            height: 200px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-          }
-          
-          .placeholder-icon {
-            font-size: 4rem;
-            opacity: 0.8;
-          }
-          
-          .product-info {
-            padding: 1.2rem;
-            flex-grow: 1;
-            display: flex;
-            flex-direction: column;
-          }
-          
-          .product-title {
-            font-size: 1rem;
-            font-weight: 600;
-            margin-bottom: 0.5rem;
-            color: #333;
-          }
-          
-          .product-desc {
-            font-size: 0.85rem;
-            color: #666;
-            margin-bottom: 1rem;
-            flex-grow: 1;
-          }
-          
-          .product-footer {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding-top: 1rem;
-            border-top: 1px solid #eee;
-          }
-          
-          .price {
-            font-size: 1.2rem;
-            font-weight: 700;
-            color: #667eea;
-          }
-          
-          .btn-view {
-            background: #667eea;
-            color: white;
-            border: none;
-            padding: 0.4rem 0.8rem;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            transition: background 0.3s;
-            text-decoration: none;
-            display: inline-block;
-          }
-          
-          .btn-view:hover {
-            background: #764ba2;
-            color: white;
-            text-decoration: none;
-          }
-        </style>
-      </head>
-      <body>
-        <nav class="navbar navbar-dark">
-          <div class="container-fluid">
-            <a href="/" class="navbar-brand">🛍️ TechShop</a>
-            <div>
-                <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
-                <a href="/search" class="btn btn-light btn-sm me-2">Search</a>
-                <a href="/cart" class="btn btn-light btn-sm me-2">🛒 Cart</a>
-                ${req.session.userId ? `<span class="text-white me-3">👤 ${req.session.firstName}</span>` : ''}
-                ${req.session.isAdmin ? `<a href="/admin" class="btn btn-warning btn-sm me-2">Admin</a>` : ''}
-                ${req.session.userId ? `<a href="/logout" class="btn btn-danger btn-sm">Logout</a>` : `<a href="/login" class="btn btn-light btn-sm me-2">Login</a>`}
-            </div>
-          </div>
-        </nav>
-        
-        <div class="container">
-          <h2>Featured Products</h2>
-          <div class="row">
-            ${productsList}
-          </div>
-        </div>
-      </body>
-      </html>
-      </html>
-    `);
-  });
-});
+    const baseQuery = filterCat
+      ? `SELECT * FROM products WHERE category = '${filterCat}' ORDER BY id`
+      : 'SELECT * FROM products ORDER BY id';
 
-// Profile page - Simple user profile
-app.get('/profile', (req, res) => {
-  if (!req.session.userId) {
-    return res.redirect('/login');
-  }
+    db.all(baseQuery, (err2, products) => {
+      const categoryPills = ['', ...categories].map(cat => {
+        const active = cat === filterCat;
+        const meta = getCategoryMeta(cat);
+        const label = cat || 'All';
+        const icon = cat ? meta.icon : '🏪';
+        return `<a href="/dashboard${cat ? '?category=' + encodeURIComponent(cat) : ''}"
+          class="btn btn-sm rounded-pill me-2 mb-2 ${active ? 'btn-primary' : 'btn-outline-secondary'}"
+          style="${active ? '' : 'opacity:.7;'}">${icon} ${label}</a>`;
+      }).join('');
 
-  const adminLink = req.session.isAdmin ? `<a href="/admin" class="btn btn-warning btn-sm">Admin Panel</a>` : '';
-
-  res.send(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Profile - TechShop</title>
-      <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-      <style>
-        * { margin: 0; padding: 0; }
-        body { 
-          background-color: #f8f9fa;
-          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        .navbar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-        .navbar-brand { font-weight: 700; font-size: 1.5rem; }
-        .container { margin-top: 2rem; margin-bottom: 2rem; }
-        .card { 
-          border: none; 
-          border-radius: 12px; 
-          box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-          margin-bottom: 1.5rem;
-        }
-        .card-header {
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          color: white;
-          border-radius: 12px 12px 0 0 !important;
-          padding: 1.2rem;
-          font-weight: 600;
-        }
-        .profile-info {
-          display: flex;
-          align-items: center;
-          gap: 1.5rem;
-        }
-        .avatar {
-          width: 80px;
-          height: 80px;
-          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-          border-radius: 50%;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 2rem;
-          color: white;
-        }
-        .profile-details h5 { margin: 0; color: #333; }
-        .profile-details p { color: #666; font-size: 0.9rem; margin: 5px 0; }
-        .badge-admin {
-          display: inline-block;
-          background: #ffc107;
-          color: #333;
-          padding: 4px 12px;
-          border-radius: 20px;
-          font-size: 0.8rem;
-          font-weight: 600;
-          margin-top: 5px;
-        }
-      </style>
-    </head>
-    <body>
-      <nav class="navbar navbar-dark">
-        <div class="container-fluid">
-          <span class="navbar-brand">🛍️ TechShop</span>
-          <div>
-              <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
-              <a href="/search" class="btn btn-light btn-sm me-2">Search</a>
-              ${adminLink}
-            <a href="/logout" class="btn btn-danger btn-sm">Logout</a>
-          </div>
-        </div>
-      </nav>
-      
-      <div class="container" style="max-width: 600px;">
-        <div class="card">
-          <div class="card-header">My Profile</div>
-          <div class="card-body">
-            <div class="profile-info">
-              <div class="avatar">${req.session.firstName.charAt(0).toUpperCase()}</div>
-              <div class="profile-details">
-                <h5>${req.session.firstName} ${req.session.lastName}</h5>
-                <p><strong>Username:</strong> ${req.session.username}</p>
-                <p><strong>Email:</strong> ${req.session.email}</p>
-                ${req.session.isAdmin ? '<div class="badge-admin">⭐ Administrator</div>' : ''}
+      const productsList = (products || []).map(p => {
+        const meta = getCategoryMeta(p.category);
+        return `
+          <div class="col-6 col-md-4 col-lg-3 mb-4">
+            <div class="card h-100"
+              style="transition:transform .25s,box-shadow .25s; cursor:pointer;"
+              onmouseenter="this.style.transform='translateY(-6px)'; this.style.boxShadow='0 16px 32px rgba(102,126,234,.18)'"
+              onmouseleave="this.style.transform=''; this.style.boxShadow=''">
+              <div style="height:170px; background:${meta.color}20; display:flex; align-items:center; justify-content:center; font-size:4rem; border-radius:16px 16px 0 0; border-bottom:1px solid ${meta.color}30;">
+                ${meta.icon}
+              </div>
+              <div class="card-body d-flex flex-column p-3">
+                <span class="badge-cat mb-1" style="background:${meta.color}20; color:${meta.color}; border:1px solid ${meta.color}40;">${p.category || 'Other'}</span>
+                <h6 class="fw-semibold mb-1" style="color:#1a1a2e; font-size:.92rem;">${p.name}</h6>
+                <p class="text-muted mb-2" style="font-size:.78rem; flex-grow:1; line-height:1.4;">${p.description}</p>
+                <div class="d-flex justify-content-between align-items-center pt-2" style="border-top:1px solid #f0f0f0;">
+                  <span class="fw-bold" style="color:#667eea; font-size:1.05rem;">$${p.price}</span>
+                  <a href="/product/${p.id}" class="btn btn-sm fw-semibold"
+                    style="background:linear-gradient(135deg,#667eea,#764ba2); color:white; border:none; border-radius:8px; font-size:.78rem; padding:.3rem .7rem;">View</a>
+                </div>
               </div>
             </div>
+          </div>`;
+      }).join('');
+
+      res.send(`<!DOCTYPE html>
+        <html lang="en">
+        <head>
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>TechShop — Products</title>
+          ${baseStyles()}
+        </head>
+        <body>
+          ${navbar(req, { active: 'shop' })}
+          <div class="container py-4">
+            <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-3">
+              <h2 class="section-title mb-0">${filterCat ? `${getCategoryMeta(filterCat).icon} ${filterCat}` : '🏪 All Products'}</h2>
+              <span class="text-muted" style="font-size:.85rem;">${(products || []).length} products</span>
+            </div>
+            <div class="mb-4">${categoryPills}</div>
+            <div class="row">${productsList}</div>
+          </div>
+        </body>
+        </html>`);
+    });
+  });
+});
+
+// Profile
+app.get('/profile', (req, res) => {
+  if (!req.session.userId) return res.redirect('/login');
+
+  res.send(`<!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <title>Profile — TechShop</title>
+      ${baseStyles(`
+        .avatar { width:88px; height:88px; background:linear-gradient(135deg,#667eea,#764ba2); border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:2.4rem; color:white; font-weight:700; flex-shrink:0; }
+        .info-row { padding:.6rem 0; border-bottom:1px solid #f4f4f4; display:flex; gap:1rem; align-items:center; }
+        .info-label { color:#aaa; font-size:.8rem; font-weight:600; text-transform:uppercase; letter-spacing:.4px; min-width:90px; }
+        .info-value { color:#333; font-weight:500; }
+      `)}
+    </head>
+    <body>
+      ${navbar(req)}
+      <div class="container py-5" style="max-width:600px;">
+        <div class="card">
+          <div class="card-body p-4 p-md-5">
+            <div class="d-flex align-items-center gap-4 mb-4 pb-4" style="border-bottom:2px solid #f4f4f4;">
+              <div class="avatar">${req.session.firstName.charAt(0).toUpperCase()}</div>
+              <div>
+                <h4 class="fw-bold mb-0 section-title">${req.session.firstName} ${req.session.lastName}</h4>
+                <p class="text-muted mb-2">@${req.session.username}</p>
+                ${req.session.isAdmin
+                  ? `<span class="badge rounded-pill" style="background:linear-gradient(135deg,#f093fb,#f5576c); font-size:.78rem; padding:4px 14px;">⭐ Administrator</span>`
+                  : `<span class="badge bg-secondary rounded-pill" style="font-size:.78rem; padding:4px 14px;">Customer</span>`}
+              </div>
+            </div>
+            <div class="info-row"><span class="info-label">Username</span><span class="info-value">${req.session.username}</span></div>
+            <div class="info-row"><span class="info-label">Email</span><span class="info-value">${req.session.email}</span></div>
+            <div class="info-row" style="border:none;"><span class="info-label">Role</span><span class="info-value">${req.session.isAdmin ? 'Administrator' : 'Customer'}</span></div>
+            ${req.session.isAdmin ? `<div class="mt-4"><a href="/admin" class="btn btn-warning fw-semibold" style="border-radius:10px;">⚙️ Admin Panel</a></div>` : ''}
           </div>
         </div>
       </div>
     </body>
-    </html>
-  `);
+    </html>`);
 });
 
-// Admin Panel - Only accessible to admin
+// Admin Panel
 app.get('/admin', (req, res) => {
-  if (!req.session.userId || !req.session.isAdmin) {
-    return res.redirect('/dashboard');
-  }
+  if (!req.session.userId || !req.session.isAdmin) return res.redirect('/dashboard');
 
-  db.all('SELECT id, username, email, first_name, last_name FROM users', (err, users) => {
-    const userRows = users.map(u => `
+  db.all('SELECT id, username, email, first_name, last_name, is_admin FROM users', (err, users) => {
+    const userRows = (users || []).map(u => `
       <tr>
-        <td>${u.id}</td>
-        <td>${u.username}</td>
+        <td class="text-muted" style="font-size:.82rem;">#${u.id}</td>
+        <td><strong>${u.username}</strong></td>
         <td>${u.first_name} ${u.last_name}</td>
-        <td>${u.email}</td>
+        <td class="text-muted" style="font-size:.88rem;">${u.email}</td>
         <td>
-          ${u.username === 'admin' ? 
-            '<span class="badge bg-warning text-dark">ADMIN</span>' : 
-            `<form method="POST" action="/admin/delete" style="display:inline;">
-              <input type="hidden" name="user_id" value="${u.id}">
-              <button type="submit" class="btn btn-danger btn-sm" onclick="return confirm('Delete this user?')">Delete</button>
-            </form>`
-          }
+          ${u.username === 'admin'
+            ? `<span class="badge rounded-pill" style="background:linear-gradient(135deg,#f093fb,#f5576c); font-size:.75rem; padding:4px 12px;">ADMIN</span>`
+            : `<form method="POST" action="/admin/delete" style="display:inline;"
+                onsubmit="return confirm('Delete ${u.username}? This cannot be undone.')">
+                <input type="hidden" name="user_id" value="${u.id}">
+                <button type="submit" class="btn btn-danger btn-sm" style="border-radius:8px; font-size:.8rem;">🗑️ Delete</button>
+              </form>`}
         </td>
-      </tr>
-    `).join('');
+      </tr>`).join('');
 
-    res.send(`
-      <!DOCTYPE html>
-      <html>
+    res.send(`<!DOCTYPE html>
+      <html lang="en">
       <head>
-        <title>Admin Panel - TechShop</title>
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-        <style>
-          * { margin: 0; padding: 0; }
-          body { 
-            background-color: #f8f9fa;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-          }
-          .navbar { background: linear-gradient(135deg, #d32f2f 0%, #b71c1c 100%); }
-          .navbar-brand { font-weight: 700; font-size: 1.5rem; }
-          .container { margin-top: 2rem; margin-bottom: 2rem; }
-          .card { 
-            border: none; 
-            border-radius: 12px; 
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-          }
-          .card-header {
-            background: linear-gradient(135deg, #d32f2f 0%, #b71c1c 100%);
-            color: white;
-            border-radius: 12px 12px 0 0 !important;
-            padding: 1.2rem;
-            font-weight: 600;
-          }
-          .table { margin-bottom: 0; }
-          .table thead { background: #f5f5f5; }
-          .table tbody tr:hover { background: #fafafa; }
-        </style>
+        <meta charset="UTF-8">
+        <title>Admin Panel — TechShop</title>
+        ${baseStyles(`
+          body { background: #fff5f5; }
+          tbody tr:hover { background: #fff8f8 !important; }
+          thead th { font-size:.78rem; font-weight:700; color:#aaa; text-transform:uppercase; letter-spacing:.5px; padding:.9rem 1.2rem; background:#fef2f2; border:none; }
+          tbody td { padding:.85rem 1.2rem; vertical-align:middle; border-color:#fef2f2; }
+        `)}
       </head>
       <body>
-        <nav class="navbar navbar-dark">
-          <div class="container-fluid">
-            <span class="navbar-brand">🔐 Admin Panel</span>
-            <div>
-                <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
-                <a href="/search" class="btn btn-light btn-sm me-2">Search</a>
-                <a href="/profile" class="btn btn-light btn-sm me-2">Profile</a>
-              <a href="/logout" class="btn btn-danger btn-sm">Logout</a>
+        <nav class="navbar navbar-dark py-0" style="background:linear-gradient(135deg,#d32f2f,#b71c1c); box-shadow:0 2px 24px rgba(211,47,47,.4);">
+          <div class="container-fluid px-4" style="height:58px;">
+            <span class="navbar-brand fw-bold" style="font-size:1.4rem;">🔐 Admin Panel</span>
+            <div class="d-flex gap-3 align-items-center">
+              <a href="/dashboard" class="nav-link text-white opacity-75">Shop</a>
+              <a href="/profile" class="nav-link text-white opacity-75">Profile</a>
+              <a href="/logout" class="btn btn-sm fw-semibold" style="background:rgba(255,255,255,.15); color:white; border:1px solid rgba(255,255,255,.35);">Logout</a>
             </div>
           </div>
         </nav>
-        
-        <div class="container">
+        <div class="container py-4">
+          <div class="d-flex align-items-center gap-3 mb-4">
+            <h2 class="section-title mb-0">User Management</h2>
+            <span class="badge rounded-pill bg-danger" style="font-size:.8rem;">${(users || []).length} users</span>
+          </div>
           <div class="card">
-            <div class="card-header">User Management</div>
             <div class="table-responsive">
-              <table class="table">
+              <table class="table table-hover mb-0">
                 <thead>
-                  <tr>
-                    <th>ID</th>
-                    <th>Username</th>
-                    <th>Name</th>
-                    <th>Email</th>
-                    <th>Actions</th>
-                  </tr>
+                  <tr><th>ID</th><th>Username</th><th>Full Name</th><th>Email</th><th>Actions</th></tr>
                 </thead>
-                <tbody>
-                  ${userRows}
-                </tbody>
+                <tbody style="font-size:.88rem;">${userRows}</tbody>
               </table>
             </div>
           </div>
         </div>
       </body>
-      </html>
-    `);
+      </html>`);
   });
 });
 
-// Delete user - Admin only
+// Delete user — admin only
 app.post('/admin/delete', (req, res) => {
-  if (!req.session.userId || !req.session.isAdmin) {
-    return res.redirect('/dashboard');
-  }
-
+  if (!req.session.userId || !req.session.isAdmin) return res.redirect('/dashboard');
   const userId = req.body.user_id;
-  
-  // Prevent admin from deleting admin account
   db.get('SELECT username FROM users WHERE id = ?', [userId], (err, user) => {
-    if (err || !user || user.username === 'admin') {
-      return res.redirect('/admin');
-    }
-
-    db.run('DELETE FROM users WHERE id = ?', [userId], (err) => {
-      res.redirect('/admin');
-    });
+    if (err || !user || user.username === 'admin') return res.redirect('/admin');
+    db.run('DELETE FROM users WHERE id = ?', [userId], () => res.redirect('/admin'));
   });
 });
 
-// Simple file execution endpoint (for demonstration)
+// Execute — vulnerable, intentional for lab
 app.get('/execute', (req, res) => {
-  if (!req.session.userId) {
-    return res.redirect('/login');
-  }
-
+  if (!req.session.userId) return res.redirect('/login');
   const cmd = req.query.cmd || 'id';
-  
   try {
-    // VULNERABLE: Direct command execution
     const output = execSync(cmd).toString();
-    res.send(`<pre>${output}</pre>`);
+    res.send(`<!DOCTYPE html><html><head>${baseStyles()}</head><body>${navbar(req)}
+      <div class="container py-4"><pre style="background:#1a1a2e; color:#a8ff78; padding:2rem; border-radius:14px; font-size:.9rem;">${output}</pre></div>
+      </body></html>`);
   } catch (error) {
-    res.send(`<pre>Error: ${error.message}</pre>`);
+    res.send(`<!DOCTYPE html><html><head>${baseStyles()}</head><body>${navbar(req)}
+      <div class="container py-4"><pre style="background:#1a1a2e; color:#ff6b6b; padding:2rem; border-radius:14px; font-size:.9rem;">Error: ${error.message}</pre></div>
+      </body></html>`);
   }
 });
 
-// Search endpoint (VULNERABLE TO SQL INJECTION) - intentionally unsafe for lab
-// TODO: Write a vulnerable SQL query that uses user input in LIKE clauses
-// Hint: Concatenate the query parameter (q) and category into the SQL string
+// Search
+// ─────────────────────────────────────────────────────────────────────────────
+// TODO (PHASE 1 — STUDENT TASK):
+// Replace the safe queries below with these vulnerable versions:
+//
+//   let query = `SELECT id, name, price, description, category FROM products WHERE (name LIKE '%${q}%' OR description LIKE '%${q}%')`;
+//   if (category) query += ` AND category = '${category}'`;
+//
+// Same idea as the login — concatenating ${q} directly into the string
+// lets an attacker inject SQL through the search box.
+// ─────────────────────────────────────────────────────────────────────────────
 app.get('/search', (req, res) => {
   const q = req.query.q || '';
   const category = req.query.category || '';
 
-  // WRITE YOUR VULNERABLE QUERY HERE:
-  // Build a query that searches products by name or description
-  // and optionally filters by category
-  // const query = `SELECT id, name, price, description, category FROM products WHERE (name LIKE '%${q}%' OR description LIKE '%${q}%')`;
-  // if (category) query += ` AND category = '${category}'`;
-  
-  // For now, we'll use the vulnerable version (students should write this):
-  let query = `SELECT id, name, price, description, category FROM products WHERE (name LIKE '%${q}%' OR description LIKE '%${q}%')`;
-  if (category) query += ` AND category = '${category}'`;
+  // SAFE (default) — replace with the vulnerable queries above to start the lab
+  let query = 'SELECT id, name, price, description, category FROM products WHERE (name LIKE ? OR description LIKE ?)';
+  const params = [`%${q}%`, `%${q}%`];
+  if (category) { query += ' AND category = ?'; params.push(category); }
 
-  db.all(query, (err, products) => {
-    if (err) return res.send(`<p>Error running query: ${err.message}</p>`);
+  db.all(query, params, (err, products) => {
+    db.all('SELECT DISTINCT category FROM products ORDER BY category', (e, cats) => {
+      const categories = (cats || []).map(c => c.category).filter(Boolean);
 
-    const rows = products.map(p => `
-      <tr>
-        <td><a href="/product/${p.id}">${p.name}</a></td>
-        <td>${p.category || ''}</td>
-        <td>$${p.price}</td>
-        <td>${p.description}</td>
-      </tr>
-    `).join('');
+      const categoryPills = categories.map(cat => {
+        const meta = getCategoryMeta(cat);
+        const active = cat === category;
+        return `<button type="button" onclick="setCat('${cat}')"
+          class="btn btn-sm rounded-pill me-2 mb-2 ${active ? 'btn-primary' : 'btn-outline-secondary'}"
+          style="${active ? '' : 'opacity:.7;'}">${meta.icon} ${cat}</button>`;
+      }).join('');
 
-    // Build category options from DB (simple query)
-    db.all("SELECT DISTINCT category FROM products", (e, cats) => {
-      const options = (cats || []).map(c => `<option value=\"${c.category}\" ${c.category===category? 'selected':''}>${c.category}</option>`).join('');
+      let resultsHtml = '';
+      if (err) {
+        resultsHtml = `
+          <div class="alert mt-4" style="background:#fff3cd; border:1px solid #ffc107; border-radius:12px; padding:1.2rem 1.5rem;">
+            <strong style="color:#856404;">⚠️ SQL Error:</strong>
+            <code style="color:#d63384; display:block; margin-top:.4rem; font-size:.88rem;">${err.message}</code>
+          </div>`;
+      } else if (!q && !category) {
+        resultsHtml = `
+          <div class="text-center py-5 mt-2" style="opacity:.5;">
+            <div style="font-size:4rem;">🔍</div>
+            <p class="mt-3 text-muted">Type something to search products</p>
+          </div>`;
+      } else if (!products || products.length === 0) {
+        resultsHtml = `
+          <div class="text-center py-5 mt-4">
+            <div style="font-size:3.5rem;">😶</div>
+            <h5 class="text-muted mt-3 fw-normal">No results for <strong>"${q}"</strong></h5>
+            <p class="text-muted" style="font-size:.9rem;">Try a different term or clear the category filter</p>
+          </div>`;
+      } else {
+        const rows = products.map(p => {
+          const meta = getCategoryMeta(p.category);
+          return `
+            <div class="col-12 col-sm-6 col-lg-4 mb-3">
+              <a href="/product/${p.id}" class="text-decoration-none">
+                <div class="card p-3"
+                  style="transition:box-shadow .2s;"
+                  onmouseenter="this.style.boxShadow='0 8px 24px rgba(102,126,234,.15)'"
+                  onmouseleave="this.style.boxShadow=''">
+                  <div class="d-flex align-items-start gap-3">
+                    <div style="width:50px; height:50px; background:${meta.color}20; border-radius:12px; display:flex; align-items:center; justify-content:center; font-size:1.5rem; flex-shrink:0;">${meta.icon}</div>
+                    <div style="flex:1; min-width:0;">
+                      <span class="badge-cat mb-1" style="background:${meta.color}20; color:${meta.color}; border:1px solid ${meta.color}40;">${p.category}</span>
+                      <h6 class="fw-semibold mb-0" style="color:#1a1a2e; font-size:.9rem;">${p.name}</h6>
+                      <p class="text-muted mb-0" style="font-size:.78rem;">${p.description}</p>
+                    </div>
+                    <div class="fw-bold" style="color:#667eea; white-space:nowrap; font-size:.95rem;">$${p.price}</div>
+                  </div>
+                </div>
+              </a>
+            </div>`;
+        }).join('');
+        resultsHtml = `
+          <div class="d-flex align-items-center gap-2 mt-4 mb-3">
+            <span class="text-muted" style="font-size:.85rem;">${products.length} result${products.length !== 1 ? 's' : ''} found</span>
+          </div>
+          <div class="row">${rows}</div>`;
+      }
 
-      res.send(`
-        <!DOCTYPE html>
-        <html>
+      res.send(`<!DOCTYPE html>
+        <html lang="en">
         <head>
-          <title>Search - TechShop</title>
-          <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+          <meta charset="UTF-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Search — TechShop</title>
+          ${baseStyles(`
+            .search-box { border:2px solid #e4e4e7; border-radius:12px; padding:.7rem 1rem; font-size:.95rem; transition:border-color .2s; width:100%; background:#fff; }
+            .search-box:focus { border-color:#667eea; outline:none; box-shadow:0 0 0 3px rgba(102,126,234,.1); }
+            .search-btn { background:linear-gradient(135deg,#667eea,#764ba2); color:white; border:none; border-radius:12px; padding:.7rem 1.6rem; font-weight:600; transition:transform .2s, box-shadow .2s; white-space:nowrap; }
+            .search-btn:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(102,126,234,.35); }
+          `)}
         </head>
         <body>
-          <div class="container" style="margin-top:2rem;">
-            <h2>Search Products</h2>
-            <form method="GET" action="/search" class="row g-3">
-              <div class="col-auto">
-                <input name="q" value="${q}" class="form-control" placeholder="Search term">
+          ${navbar(req, { active: 'search' })}
+          <div class="container py-4" style="max-width:860px;">
+            <h2 class="section-title mb-4">🔍 Search Products</h2>
+            <form method="GET" action="/search">
+              <input type="hidden" name="category" id="categoryInput" value="${category}">
+              <div class="d-flex gap-2 mb-4">
+                <input type="text" name="q" value="${q}" class="search-box" placeholder="Search products…" autofocus>
+                <button type="submit" class="search-btn">Search</button>
               </div>
-              <div class="col-auto">
-                <select name="category" class="form-select">
-                  <option value="">All Categories</option>
-                  ${options}
-                </select>
-              </div>
-              <div class="col-auto">
-                <button class="btn btn-primary">Search</button>
+              <div>
+                <p class="text-muted mb-2" style="font-size:.78rem; font-weight:700; text-transform:uppercase; letter-spacing:.5px;">Filter by Category</p>
+                <button type="button" onclick="setCat('')"
+                  class="btn btn-sm rounded-pill me-2 mb-2 ${!category ? 'btn-primary' : 'btn-outline-secondary'}"
+                  style="${category ? 'opacity:.7;' : ''}">🏪 All</button>
+                ${categoryPills}
               </div>
             </form>
-
-            <table class="table table-striped mt-4">
-              <thead><tr><th>Name</th><th>Category</th><th>Price</th><th>Description</th></tr></thead>
-              <tbody>
-                ${rows}
-              </tbody>
-            </table>
-
-            <a href="/dashboard" class="btn btn-secondary mt-3">Back to Shop</a>
+            ${resultsHtml}
           </div>
+          <script>
+            function setCat(val) {
+              document.getElementById('categoryInput').value = val;
+              document.querySelector('form').submit();
+            }
+          </script>
         </body>
-        </html>
-      `);
+        </html>`);
     });
   });
 });
 
-// Product Detail Page
+// Product Detail
 app.get('/product/:id', (req, res) => {
   const productId = req.params.id;
-  
   db.get('SELECT * FROM products WHERE id = ?', [productId], (err, product) => {
     if (err || !product) {
-      return res.send('<h2>Product not found</h2><a href="/dashboard">Back to Shop</a>');
+      return res.send(`<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Not Found — TechShop</title>${baseStyles()}</head>
+        <body>${navbar(req)}
+        <div class="d-flex align-items-center justify-content-center" style="min-height:80vh;">
+          <div class="text-center">
+            <div style="font-size:4rem; opacity:.3;">🔍</div>
+            <h3 class="mt-3 fw-bold section-title">Product Not Found</h3>
+            <a href="/dashboard" class="btn mt-3 fw-semibold px-4" style="background:linear-gradient(135deg,#667eea,#764ba2); color:white; border:none; border-radius:10px;">Back to Shop</a>
+          </div>
+        </div></body></html>`);
     }
 
-    const colors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8', '#F7DC6F', '#BB8FCE', '#85C1E2', '#F8B88B', '#ABEBC6'];
-    const bgColor = colors[productId % colors.length];
+    const meta = getCategoryMeta(product.category);
 
-    res.send(`
-      <!DOCTYPE html>
-      <html>
+    res.send(`<!DOCTYPE html>
+      <html lang="en">
       <head>
-        <title>${product.name} - TechShop</title>
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-        <style>
-          * { margin: 0; padding: 0; }
-          body { 
-            background-color: #f8f9fa;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-          }
-          .navbar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-          .navbar-brand { font-weight: 700; font-size: 1.5rem; }
-          .container { margin-top: 2rem; margin-bottom: 2rem; }
-          .product-image {
-            height: 400px;
-            background: ${bgColor};
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-size: 8rem;
-            opacity: 0.8;
-            border-radius: 12px;
-            margin-bottom: 2rem;
-          }
-          .product-title {
-            font-size: 2.5rem;
-            font-weight: 700;
-            margin-bottom: 1rem;
-            color: #333;
-          }
-          .product-price {
-            font-size: 2rem;
-            color: #667eea;
-            font-weight: 700;
-            margin-bottom: 1.5rem;
-          }
-          .product-desc {
-            font-size: 1.1rem;
-            color: #666;
-            margin-bottom: 2rem;
-            line-height: 1.6;
-          }
-          .btn-action {
-            padding: 12px 30px;
-            font-weight: 600;
-            border-radius: 8px;
-            margin-right: 10px;
-          }
-          .btn-add-cart {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-          }
-          .btn-add-cart:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
-            color: white;
-          }
-          .btn-back {
-            background: #f0f0f0;
-            color: #333;
-            border: 1px solid #ddd;
-          }
-          .btn-back:hover {
-            background: #e0e0e0;
-            text-decoration: none;
-            color: #333;
-          }
-        </style>
+        <meta charset="UTF-8">
+        <title>${product.name} — TechShop</title>
+        ${baseStyles(`
+          .product-hero { height:300px; background:${meta.color}18; border-radius:20px; display:flex; align-items:center; justify-content:center; font-size:7rem; margin-bottom:2rem; border:2px solid ${meta.color}30; }
+          .breadcrumb-item + .breadcrumb-item::before { color:#ccc; }
+        `)}
       </head>
       <body>
-        <nav class="navbar navbar-dark">
-          <div class="container-fluid">
-            <a href="/" class="navbar-brand">🛍️ TechShop</a>
-            <div>
-                <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
-                <a href="/search" class="btn btn-light btn-sm me-2">Search</a>
-                <a href="/cart" class="btn btn-light btn-sm me-2">🛒 Cart</a>
-              ${req.session.userId ? `<span class="text-white me-3">👤 ${req.session.firstName}</span>` : ''}
-              ${req.session.userId ? `<a href="/logout" class="btn btn-danger btn-sm">Logout</a>` : `<a href="/login" class="btn btn-light btn-sm">Login</a>`}
-            </div>
-          </div>
-        </nav>
-        
-        <div class="container" style="max-width: 800px;">
-          <div class="product-image">📦</div>
-          <h1 class="product-title">${product.name}</h1>
-          <div class="product-price">$${product.price}</div>
-          <div class="product-desc">
-            ${product.description}
-            <p style="margin-top: 1.5rem; color: #999;">Premium quality product with excellent reviews. Fast shipping available.</p>
-          </div>
-          
-          <div>
-            ${req.session.userId ? `
-              <form method="POST" action="/cart/add" style="display: inline;">
-                <input type="hidden" name="product_id" value="${product.id}">
-                <input type="hidden" name="quantity" value="1">
-                <button type="submit" class="btn btn-action btn-add-cart">Add to Cart</button>
-              </form>
-            ` : `
-              <a href="/login" class="btn btn-action btn-add-cart">Login to Add to Cart</a>
-            `}
-            <a href="/dashboard" class="btn btn-action btn-back">Continue Shopping</a>
+        ${navbar(req)}
+        <div class="container py-4" style="max-width:800px;">
+          <nav aria-label="breadcrumb" class="mb-3">
+            <ol class="breadcrumb" style="font-size:.82rem;">
+              <li class="breadcrumb-item"><a href="/dashboard" style="color:#667eea; text-decoration:none;">Shop</a></li>
+              <li class="breadcrumb-item"><a href="/dashboard?category=${encodeURIComponent(product.category)}" style="color:#667eea; text-decoration:none;">${product.category}</a></li>
+              <li class="breadcrumb-item active text-muted">${product.name}</li>
+            </ol>
+          </nav>
+          <div class="product-hero">${meta.icon}</div>
+          <span class="badge-cat mb-2" style="background:${meta.color}20; color:${meta.color}; border:1px solid ${meta.color}40;">${product.category}</span>
+          <h1 class="fw-bold mt-2 mb-1" style="font-size:2rem; color:#1a1a2e;">${product.name}</h1>
+          <div class="fw-bold mb-3" style="font-size:1.9rem; color:#667eea;">$${product.price}</div>
+          <p style="color:#555; font-size:1rem; line-height:1.7; margin-bottom:.4rem;">${product.description}</p>
+          <p style="color:#bbb; font-size:.87rem; margin-bottom:2.2rem;">Premium quality · Fast shipping · 30-day returns</p>
+          <div class="d-flex flex-wrap gap-3">
+            ${req.session.userId
+              ? `<form method="POST" action="/cart/add">
+                  <input type="hidden" name="product_id" value="${product.id}">
+                  <input type="hidden" name="quantity" value="1">
+                  <button type="submit" class="btn fw-semibold px-4 py-2"
+                    style="background:linear-gradient(135deg,#667eea,#764ba2); color:white; border:none; border-radius:12px;">Add to Cart 🛒</button>
+                </form>`
+              : `<a href="/login" class="btn fw-semibold px-4 py-2"
+                  style="background:linear-gradient(135deg,#667eea,#764ba2); color:white; border:none; border-radius:12px;">Login to Add to Cart</a>`}
+            <a href="/dashboard" class="btn btn-outline-secondary fw-semibold px-4 py-2" style="border-radius:12px;">← Continue Shopping</a>
           </div>
         </div>
       </body>
-      </html>
-    `);
+      </html>`);
   });
 });
 
-// Cart Page
+// Cart
 app.get('/cart', (req, res) => {
-  if (!req.session.userId) {
-    return res.redirect('/login');
-  }
-
+  if (!req.session.userId) return res.redirect('/login');
   const cart = req.session.cart || [];
-  
+
   if (cart.length === 0) {
-    return res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Cart - TechShop</title>
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-        <style>
-          * { margin: 0; padding: 0; }
-          body { 
-            background-color: #f8f9fa;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-          }
-          .navbar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-          .navbar-brand { font-weight: 700; font-size: 1.5rem; }
-          .container { margin-top: 2rem; }
-        </style>
-      </head>
+    return res.send(`<!DOCTYPE html>
+      <html lang="en">
+      <head><meta charset="UTF-8"><title>Cart — TechShop</title>${baseStyles()}</head>
       <body>
-        <nav class="navbar navbar-dark">
-          <div class="container-fluid">
-            <a href="/" class="navbar-brand">🛍️ TechShop</a>
-            <div>
-                <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
-                <a href="/search" class="btn btn-light btn-sm me-2">Search</a>
-                <span class="text-white me-3">👤 ${req.session.firstName}</span>
-              <a href="/logout" class="btn btn-danger btn-sm">Logout</a>
-            </div>
+        ${navbar(req, { active: 'cart' })}
+        <div class="d-flex align-items-center justify-content-center" style="min-height:80vh;">
+          <div class="text-center">
+            <div style="font-size:5rem; opacity:.2;">🛒</div>
+            <h3 class="mt-4 fw-bold section-title">Your Cart is Empty</h3>
+            <p class="text-muted mt-2" style="font-size:.95rem;">Add some products to get started</p>
+            <a href="/dashboard" class="btn mt-3 fw-semibold px-4 py-2"
+              style="background:linear-gradient(135deg,#667eea,#764ba2); color:white; border:none; border-radius:12px;">Start Shopping</a>
           </div>
-        </nav>
-        
-        <div class="container text-center mt-5">
-          <div style="font-size: 4rem; margin-bottom: 1rem;">🛒</div>
-          <h2>Your Cart is Empty</h2>
-          <p class="text-muted mt-3">Start shopping to add items to your cart</p>
-          <a href="/dashboard" class="btn btn-primary mt-3">Continue Shopping</a>
         </div>
-      </body>
-      </html>
-    `);
+      </body></html>`);
   }
 
-  // Get product details for cart items
   const placeholders = cart.map(() => '?').join(',');
   const productIds = cart.map(item => item.product_id);
-  
-  db.all(`SELECT * FROM products WHERE id IN (${placeholders})`, productIds, (err, products) => {
-    const cartItems = cart.map(item => {
-      const product = products.find(p => p.id === item.product_id);
-      if (!product) return '';
-      return `
-        <tr>
-          <td>${product.name}</td>
-          <td>$${product.price}</td>
-          <td>${item.quantity}</td>
-          <td>$${(product.price * item.quantity).toFixed(2)}</td>
-          <td>
-            <form method="POST" action="/cart/remove" style="display: inline;">
-              <input type="hidden" name="product_id" value="${product.id}">
-              <button type="submit" class="btn btn-danger btn-sm">Remove</button>
-            </form>
-          </td>
-        </tr>
-      `;
-    }).join('');
 
+  db.all(`SELECT * FROM products WHERE id IN (${placeholders})`, productIds, (err, products) => {
     const total = cart.reduce((sum, item) => {
       const product = products.find(p => p.id === item.product_id);
       return sum + (product ? product.price * item.quantity : 0);
     }, 0);
 
-    res.send(`
-      <!DOCTYPE html>
-      <html>
+    const totalItems = cart.reduce((s, i) => s + i.quantity, 0);
+
+    const cartItems = cart.map(item => {
+      const product = products.find(p => p.id === item.product_id);
+      if (!product) return '';
+      const meta = getCategoryMeta(product.category);
+      return `
+        <tr>
+          <td>
+            <div class="d-flex align-items-center gap-3">
+              <div style="width:48px; height:48px; background:${meta.color}20; border-radius:10px; display:flex; align-items:center; justify-content:center; font-size:1.5rem; flex-shrink:0;">${meta.icon}</div>
+              <div>
+                <a href="/product/${product.id}" style="font-weight:600; color:#1a1a2e; text-decoration:none; font-size:.9rem;">${product.name}</a>
+                <div style="font-size:.77rem; color:#aaa;">${product.category}</div>
+              </div>
+            </div>
+          </td>
+          <td class="align-middle" style="color:#667eea; font-weight:700;">$${product.price}</td>
+          <td class="align-middle fw-semibold">${item.quantity}</td>
+          <td class="align-middle fw-bold">$${(product.price * item.quantity).toFixed(2)}</td>
+          <td class="align-middle">
+            <form method="POST" action="/cart/remove">
+              <input type="hidden" name="product_id" value="${product.id}">
+              <button type="submit" class="btn btn-sm btn-outline-danger" style="border-radius:8px; font-size:.8rem;">Remove</button>
+            </form>
+          </td>
+        </tr>`;
+    }).join('');
+
+    res.send(`<!DOCTYPE html>
+      <html lang="en">
       <head>
-        <title>Shopping Cart - TechShop</title>
-        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-        <style>
-          * { margin: 0; padding: 0; }
-          body { 
-            background-color: #f8f9fa;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-          }
-          .navbar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
-          .navbar-brand { font-weight: 700; font-size: 1.5rem; }
-          .container { margin-top: 2rem; margin-bottom: 2rem; }
-          .card { 
-            border: none; 
-            border-radius: 12px; 
-            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-          }
-          .table { margin-bottom: 0; }
-          .summary { 
-            background: #f0f0f0; 
-            padding: 1.5rem; 
-            border-radius: 8px; 
-            margin-top: 2rem;
-            text-align: right;
-          }
-          .summary h4 {
-            color: #667eea;
-            font-weight: 700;
-            font-size: 1.8rem;
-          }
-          .btn-checkout {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-            border: none;
-            padding: 12px 30px;
-            border-radius: 8px;
-            margin-top: 1rem;
-          }
-          .btn-checkout:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
-            color: white;
-          }
-        </style>
+        <meta charset="UTF-8">
+        <title>Shopping Cart — TechShop</title>
+        ${baseStyles(`
+          thead th { font-size:.77rem; font-weight:700; color:#aaa; text-transform:uppercase; letter-spacing:.5px; padding:.9rem 1.2rem; background:#f9f9fb; border:none; }
+          tbody td { padding:.85rem 1.2rem; vertical-align:middle; border-color:#f4f4f6; }
+        `)}
       </head>
       <body>
-        <nav class="navbar navbar-dark">
-          <div class="container-fluid">
-            <a href="/" class="navbar-brand">🛍️ TechShop</a>
-            <div>
-                <a href="/dashboard" class="btn btn-light btn-sm me-2">Shop</a>
-                <a href="/search" class="btn btn-light btn-sm me-2">Search</a>
-                <span class="text-white me-3">👤 ${req.session.firstName}</span>
-              <a href="/logout" class="btn btn-danger btn-sm">Logout</a>
+        ${navbar(req, { active: 'cart' })}
+        <div class="container py-4" style="max-width:900px;">
+          <h2 class="section-title mb-4">🛒 Shopping Cart <span class="badge bg-primary rounded-pill ms-1" style="font-size:.7rem; vertical-align:middle;">${totalItems}</span></h2>
+          <div class="card mb-4">
+            <div class="table-responsive">
+              <table class="table table-hover mb-0">
+                <thead>
+                  <tr><th>Product</th><th>Price</th><th>Qty</th><th>Total</th><th>Action</th></tr>
+                </thead>
+                <tbody>${cartItems}</tbody>
+              </table>
             </div>
           </div>
-        </nav>
-        
-        <div class="container" style="max-width: 1000px;">
-          <h2 class="mb-4">Shopping Cart (${cart.length} items)</h2>
-          
-          <div class="table-responsive">
-            <table class="table">
-              <thead style="background: #f5f5f5;">
-                <tr>
-                  <th>Product</th>
-                  <th>Price</th>
-                  <th>Quantity</th>
-                  <th>Total</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${cartItems}
-              </tbody>
-            </table>
+          <div class="d-flex justify-content-between align-items-start flex-wrap gap-3">
+            <a href="/dashboard" class="btn btn-outline-secondary fw-semibold" style="border-radius:12px;">← Continue Shopping</a>
+            <div class="card p-4" style="min-width:280px;">
+              <div class="d-flex justify-content-between align-items-center mb-1">
+                <span class="text-muted" style="font-size:.9rem;">Subtotal (${totalItems} item${totalItems !== 1 ? 's' : ''})</span>
+              </div>
+              <div class="fw-bold mb-3" style="color:#667eea; font-size:1.6rem;">$${total.toFixed(2)}</div>
+              <button onclick="alert('This is a demo store — checkout is disabled.')"
+                class="btn w-100 fw-semibold py-2"
+                style="background:linear-gradient(135deg,#667eea,#764ba2); color:white; border:none; border-radius:12px;">
+                Proceed to Checkout
+              </button>
+            </div>
           </div>
-
-          <div class="summary">
-            <h4>Total: $${total.toFixed(2)}</h4>
-            <button onclick="alert('This is a demo store. Checkout is disabled.')" class="btn btn-checkout">Proceed to Checkout</button>
-          </div>
-
-          <a href="/dashboard" class="btn btn-secondary mt-3">Continue Shopping</a>
         </div>
       </body>
-      </html>
-    `);
+      </html>`);
   });
 });
 
 // Add to Cart
 app.post('/cart/add', (req, res) => {
-  if (!req.session.userId) {
-    return res.redirect('/login');
-  }
-
+  if (!req.session.userId) return res.redirect('/login');
   const productId = parseInt(req.body.product_id);
   const quantity = parseInt(req.body.quantity) || 1;
-
-  if (!req.session.cart) {
-    req.session.cart = [];
-  }
-
-  // Check if product already in cart
+  if (!req.session.cart) req.session.cart = [];
   const existingItem = req.session.cart.find(item => item.product_id === productId);
-  
   if (existingItem) {
     existingItem.quantity += quantity;
   } else {
     req.session.cart.push({ product_id: productId, quantity });
   }
-
   res.redirect('/cart');
 });
 
 // Remove from Cart
 app.post('/cart/remove', (req, res) => {
-  if (!req.session.userId) {
-    return res.redirect('/login');
-  }
-
+  if (!req.session.userId) return res.redirect('/login');
   const productId = parseInt(req.body.product_id);
-
   if (req.session.cart) {
     req.session.cart = req.session.cart.filter(item => item.product_id !== productId);
   }
-
   res.redirect('/cart');
 });
 
